@@ -22,3 +22,5 @@ tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 bollard = "*"
+futures-util = "0.3"
+tokio = { version = "1", features = ["full"] }
