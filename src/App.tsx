@@ -40,8 +40,17 @@ interface ImageInfo {
   created: number;
 }
 
-// Docker status can be either a string or an object with an Error field
-type DockerStatus = string | { Error: string };
+// Docker status can be one of these enum variants
+// type DockerStatus =
+//   | { Connected: null }
+//   | { Disconnected: null }
+//   | { Error: string };
+
+enum DockerStatus {
+  Connected = "Connected",
+  Disconnected = "Disconnected",
+  Error = "Error",
+}
 
 function App() {
   const [currentView, setCurrentView] = useState<View>("dashboard");
@@ -61,7 +70,7 @@ function App() {
         setDockerStatus(status);
       } catch (error) {
         console.error("Failed to initialize Docker client:", error);
-        setDockerStatus({ Error: String(error) });
+        setDockerStatus(DockerStatus.Error);
       }
     };
 
@@ -77,7 +86,7 @@ function App() {
         setDockerStatus(status);
       } catch (error) {
         console.error("Failed to check Docker status:", error);
-        setDockerStatus({ Error: String(error) });
+        setDockerStatus(DockerStatus.Error);
       }
     };
 
@@ -89,10 +98,7 @@ function App() {
   }, []);
 
   const fetchData = async () => {
-    if (
-      !dockerStatus ||
-      (typeof dockerStatus === "object" && "Error" in dockerStatus)
-    ) {
+    if (!dockerStatus || dockerStatus === DockerStatus.Error) {
       return;
     }
 
@@ -111,10 +117,11 @@ function App() {
   };
 
   useEffect(() => {
-    if (dockerStatus && dockerStatus === "Connected") {
+    if (dockerStatus && dockerStatus === DockerStatus.Connected) {
       fetchData();
 
       // Refresh data every 30 seconds
+      // TODO: Replace with Docker event system
       const interval = setInterval(() => {
         if (currentView === "dashboard") {
           fetchData();
@@ -147,11 +154,11 @@ function App() {
 
     console.log(dockerStatus);
 
-    if (dockerStatus === "Connected") {
+    if (dockerStatus === DockerStatus.Connected) {
       return { text: "Running", color: "green" };
-    } else if (dockerStatus === "Disconnected") {
+    } else if (dockerStatus === DockerStatus.Disconnected) {
       return { text: "Stopped", color: "yellow" };
-    } else if (typeof dockerStatus === "object" && "Error" in dockerStatus) {
+    } else if (dockerStatus === DockerStatus.Error) {
       return { text: "Error", color: "red" };
     }
 
@@ -174,18 +181,16 @@ function App() {
         animate={{ paddingLeft: isSidebarCollapsed ? "1.5rem" : "1.5rem" }}
         transition={{ duration: 0.2 }}
       >
-        {dockerStatus &&
-          typeof dockerStatus === "object" &&
-          "Error" in dockerStatus && (
-            <Alert variant="destructive" className="mb-6">
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Docker Connection Error</AlertTitle>
-              <AlertDescription>
-                {dockerStatus.Error}. Please make sure Docker is running and try
-                again.
-              </AlertDescription>
-            </Alert>
-          )}
+        {dockerStatus && dockerStatus === DockerStatus.Error && (
+          <Alert variant="destructive" className="mb-6">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Docker Connection Error</AlertTitle>
+            <AlertDescription>
+              {DockerStatus.Error}. Please make sure Docker is running and try
+              again.
+            </AlertDescription>
+          </Alert>
+        )}
 
         <AnimatePresence mode="wait">
           {currentView === "containers" && (
@@ -242,8 +247,7 @@ function App() {
                     disabled={
                       loading ||
                       !dockerStatus ||
-                      (typeof dockerStatus === "object" &&
-                        "Error" in dockerStatus)
+                      dockerStatus === DockerStatus.Error
                     }
                   >
                     <RefreshCw

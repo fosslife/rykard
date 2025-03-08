@@ -11,7 +11,9 @@ This project aims to create a lightweight Docker Desktop alternative using Tauri
 - **UI**: Tailwind CSS with shadcn/ui components
 - **Animations**: motion/react (framer-motion)
 - **Icons**: lucide-react
-- **State Management**: React Context API / Zustand (future)
+- **State Management**:
+  - **Backend**: Tauri state management with Mutex
+  - **Frontend**: React Context API / Zustand (future)
 
 ## Feature Roadmap
 
@@ -40,6 +42,13 @@ This project aims to create a lightweight Docker Desktop alternative using Tauri
   - [x] Consistent styling with shadcn/ui components
   - [x] Responsive design
   - [x] Smooth animations and transitions
+  - [x] Collapsible sidebar
+- [x] Backend Improvements
+  - [x] Docker client state management with Tauri state
+  - [x] Docker status monitoring
+  - [x] Error handling and recovery
+- [ ] Real-time Updates
+  - [ ] Replace polling with Docker event system
 - [ ] Container details
   - [ ] View container stats (CPU, memory, network)
   - [ ] View container configuration
@@ -84,8 +93,10 @@ This project aims to create a lightweight Docker Desktop alternative using Tauri
   - Image listing, pulling, and removal
   - Container logs with auto-refresh
   - Modern UI with vertical sidebar, dashboard, and animations
-- **In Progress**: Container details
-- **Next Up**: Container creation
+  - Collapsible sidebar
+  - Docker client state management with Tauri state
+- **In Progress**: Real-time updates with Docker events
+- **Next Up**: Container details
 
 ## Development Guidelines
 
