@@ -38,6 +38,7 @@ function App() {
   const [images, setImages] = useState<ImageInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -77,11 +78,24 @@ function App() {
     return lastRefreshed.toLocaleTimeString();
   };
 
+  const handleSidebarToggle = (collapsed: boolean) => {
+    setIsSidebarCollapsed(collapsed);
+  };
+
   return (
     <div className="flex h-screen bg-background text-foreground">
-      <Sidebar currentView={currentView} setCurrentView={setCurrentView} />
+      <Sidebar
+        currentView={currentView}
+        setCurrentView={setCurrentView}
+        onToggle={handleSidebarToggle}
+      />
 
-      <main className="flex-1 p-4 md:p-6 overflow-auto">
+      <motion.main
+        className="flex-1 p-4 md:p-6 overflow-auto"
+        initial={{ paddingLeft: "1.5rem" }}
+        animate={{ paddingLeft: isSidebarCollapsed ? "1.5rem" : "1.5rem" }}
+        transition={{ duration: 0.2 }}
+      >
         <AnimatePresence mode="wait">
           {currentView === "containers" && (
             <motion.div
@@ -318,7 +332,7 @@ function App() {
             </motion.div>
           )}
         </AnimatePresence>
-      </main>
+      </motion.main>
     </div>
   );
 }

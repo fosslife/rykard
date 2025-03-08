@@ -46,7 +46,7 @@ const Navbar: React.FC<NavbarProps> = ({ currentView, setCurrentView }) => {
           >
             D
           </motion.div>
-          <h1 className="text-xl font-bold">Docker Desktop Alt</h1>
+          <h1 className="text-xl font-bold">Rykard</h1>
         </div>
 
         <nav className="relative">
