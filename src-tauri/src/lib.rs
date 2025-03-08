@@ -25,7 +25,7 @@ pub struct ImageInfo {
 
 #[tauri::command]
 async fn list_containers() -> Result<Vec<ContainerInfo>, String> {
-    let docker = match Docker::connect_with_local_defaults() {
+    let docker: Docker = match Docker::connect_with_local_defaults() {
         Ok(docker) => docker,
         Err(e) => return Err(format!("Failed to connect to Docker: {}", e)),
     };
