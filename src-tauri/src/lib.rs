@@ -1,10 +1,14 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 use bollard::container::{ListContainersOptions, StartContainerOptions, StopContainerOptions};
-use bollard::Docker;
+use bollard::image::ListImagesOptions;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 use tokio;
+
+// Import our Docker manager module
+mod docker_manager;
+use docker_manager::{check_docker_status, get_docker_client, initialize_docker, DockerStatus};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ContainerInfo {
@@ -24,11 +28,18 @@ pub struct ImageInfo {
 }
 
 #[tauri::command]
+async fn initialize_docker_client() -> Result<DockerStatus, String> {
+    Ok(initialize_docker())
+}
+
+#[tauri::command]
+async fn get_docker_status() -> Result<DockerStatus, String> {
+    Ok(check_docker_status().await)
+}
+
+#[tauri::command]
 async fn list_containers() -> Result<Vec<ContainerInfo>, String> {
-    let docker: Docker = match Docker::connect_with_local_defaults() {
-        Ok(docker) => docker,
-        Err(e) => return Err(format!("Failed to connect to Docker: {}", e)),
-    };
+    let docker = get_docker_client()?;
 
     let options = Some(ListContainersOptions::<String> {
         all: true,
@@ -60,7 +71,7 @@ async fn list_containers() -> Result<Vec<ContainerInfo>, String> {
 
             Ok(container_info)
         }
-        Err(e) => Err(format!("Failed to list images: {}", e)),
+        Err(e) => Err(format!("Failed to list containers: {}", e)),
     }
 }
 
@@ -116,26 +127,9 @@ async fn list_images() -> Result<Vec<ImageInfo>, String> {
     }
 }
 
-// Helper function to parse human-readable size to bytes
-fn parse_size(_size_str: &str) -> u64 {
-    // Simple implementation - just return 0 for now
-    // In a real implementation, we would parse strings like "10MB", "1.2GB", etc.
-    0
-}
-
-// Helper function to parse timestamp to Unix timestamp
-fn parse_timestamp(_timestamp_str: &str) -> u64 {
-    // Simple implementation - just return 0 for now
-    // In a real implementation, we would parse the timestamp string
-    0
-}
-
 #[tauri::command]
 async fn start_container(container_id: &str) -> Result<(), String> {
-    let docker = match Docker::connect_with_local_defaults() {
-        Ok(docker) => docker,
-        Err(e) => return Err(format!("Failed to connect to Docker: {}", e)),
-    };
+    let docker = get_docker_client()?;
 
     match docker
         .start_container(container_id, None::<StartContainerOptions<String>>)
@@ -148,10 +142,7 @@ async fn start_container(container_id: &str) -> Result<(), String> {
 
 #[tauri::command]
 async fn stop_container(container_id: &str) -> Result<(), String> {
-    let docker = match Docker::connect_with_local_defaults() {
-        Ok(docker) => docker,
-        Err(e) => return Err(format!("Failed to connect to Docker: {}", e)),
-    };
+    let docker = get_docker_client()?;
 
     match docker
         .stop_container(container_id, None::<StopContainerOptions>)
@@ -164,10 +155,7 @@ async fn stop_container(container_id: &str) -> Result<(), String> {
 
 #[tauri::command]
 async fn remove_container(container_id: &str) -> Result<(), String> {
-    let docker = match Docker::connect_with_local_defaults() {
-        Ok(docker) => docker,
-        Err(e) => return Err(format!("Failed to connect to Docker: {}", e)),
-    };
+    let docker = get_docker_client()?;
 
     match docker.remove_container(container_id, None).await {
         Ok(_) => Ok(()),
@@ -177,10 +165,7 @@ async fn remove_container(container_id: &str) -> Result<(), String> {
 
 #[tauri::command]
 async fn pull_image(image_name: &str) -> Result<(), String> {
-    let docker = match Docker::connect_with_local_defaults() {
-        Ok(docker) => docker,
-        Err(e) => return Err(format!("Failed to connect to Docker: {}", e)),
-    };
+    let docker = get_docker_client()?;
 
     // Split the image name into repository and tag
     let parts: Vec<&str> = image_name.split(':').collect();
@@ -214,10 +199,7 @@ async fn pull_image(image_name: &str) -> Result<(), String> {
 
 #[tauri::command]
 async fn remove_image(image_id: &str) -> Result<(), String> {
-    let docker = match Docker::connect_with_local_defaults() {
-        Ok(docker) => docker,
-        Err(e) => return Err(format!("Failed to connect to Docker: {}", e)),
-    };
+    let docker = get_docker_client()?;
 
     match docker.remove_image(image_id, None, None).await {
         Ok(_) => Ok(()),
@@ -232,13 +214,6 @@ fn greet(name: &str) -> String {
 
 #[tauri::command]
 async fn get_container_logs(container_id: &str, tail_lines: Option<u64>) -> Result<String, String> {
-    // We don't need Docker connection for this approach, so we can remove the unused variable
-    // by removing this code or prefixing with underscore
-    // let _docker = match Docker::connect_with_local_defaults() {
-    //     Ok(docker) => docker,
-    //     Err(e) => return Err(format!("Failed to connect to Docker: {}", e)),
-    // };
-
     // Use a simpler approach with a command execution
     let tail = tail_lines.unwrap_or(100);
 
@@ -263,8 +238,25 @@ async fn get_container_logs(container_id: &str, tail_lines: Option<u64>) -> Resu
     }
 }
 
+// Helper function to parse human-readable size to bytes
+fn parse_size(_size_str: &str) -> u64 {
+    // Simple implementation - just return 0 for now
+    // In a real implementation, we would parse strings like "10MB", "1.2GB", etc.
+    0
+}
+
+// Helper function to parse timestamp to Unix timestamp
+fn parse_timestamp(_timestamp_str: &str) -> u64 {
+    // Simple implementation - just return 0 for now
+    // In a real implementation, we would parse the timestamp string
+    0
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Initialize Docker client at startup
+    initialize_docker();
+
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             greet,
@@ -275,7 +267,9 @@ pub fn run() {
             remove_container,
             pull_image,
             remove_image,
-            get_container_logs
+            get_container_logs,
+            initialize_docker_client,
+            get_docker_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

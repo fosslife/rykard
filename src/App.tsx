@@ -12,8 +12,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Boxes, HardDrive, Activity, Database, RefreshCw } from "lucide-react";
+import {
+  Boxes,
+  HardDrive,
+  Activity,
+  Database,
+  RefreshCw,
+  AlertCircle,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 type View = "containers" | "images" | "dashboard";
 
@@ -32,6 +40,9 @@ interface ImageInfo {
   created: number;
 }
 
+// Docker status can be either a string or an object with an Error field
+type DockerStatus = string | { Error: string };
+
 function App() {
   const [currentView, setCurrentView] = useState<View>("dashboard");
   const [containers, setContainers] = useState<ContainerInfo[]>([]);
@@ -39,8 +50,52 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [dockerStatus, setDockerStatus] = useState<DockerStatus | null>(null);
+
+  // Initialize Docker client
+  useEffect(() => {
+    const initDocker = async () => {
+      try {
+        const status = await invoke<DockerStatus>("initialize_docker_client");
+        console.log("Docker status:", status);
+        setDockerStatus(status);
+      } catch (error) {
+        console.error("Failed to initialize Docker client:", error);
+        setDockerStatus({ Error: String(error) });
+      }
+    };
+
+    initDocker();
+  }, []);
+
+  // Check Docker status periodically
+  useEffect(() => {
+    const checkStatus = async () => {
+      try {
+        const status = await invoke<DockerStatus>("get_docker_status");
+        console.log("Docker status check:", status);
+        setDockerStatus(status);
+      } catch (error) {
+        console.error("Failed to check Docker status:", error);
+        setDockerStatus({ Error: String(error) });
+      }
+    };
+
+    // Check status immediately and then every 30 seconds
+    checkStatus();
+    const interval = setInterval(checkStatus, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   const fetchData = async () => {
+    if (
+      !dockerStatus ||
+      (typeof dockerStatus === "object" && "Error" in dockerStatus)
+    ) {
+      return;
+    }
+
     setLoading(true);
     try {
       const containerData = await invoke<ContainerInfo[]>("list_containers");
@@ -56,17 +111,19 @@ function App() {
   };
 
   useEffect(() => {
-    fetchData();
+    if (dockerStatus && dockerStatus === "Connected") {
+      fetchData();
 
-    // Refresh data every 30 seconds
-    const interval = setInterval(() => {
-      if (currentView === "dashboard") {
-        fetchData();
-      }
-    }, 30000);
+      // Refresh data every 30 seconds
+      const interval = setInterval(() => {
+        if (currentView === "dashboard") {
+          fetchData();
+        }
+      }, 30000);
 
-    return () => clearInterval(interval);
-  }, [currentView]);
+      return () => clearInterval(interval);
+    }
+  }, [currentView, dockerStatus]);
 
   const runningContainers = containers.filter(
     (c) => c.state === "running"
@@ -82,6 +139,27 @@ function App() {
     setIsSidebarCollapsed(collapsed);
   };
 
+  // Get Docker status text and color
+  const getDockerStatusInfo = () => {
+    if (!dockerStatus) {
+      return { text: "Checking...", color: "gray" };
+    }
+
+    console.log(dockerStatus);
+
+    if (dockerStatus === "Connected") {
+      return { text: "Running", color: "green" };
+    } else if (dockerStatus === "Disconnected") {
+      return { text: "Stopped", color: "yellow" };
+    } else if (typeof dockerStatus === "object" && "Error" in dockerStatus) {
+      return { text: "Error", color: "red" };
+    }
+
+    return { text: "Unknown", color: "gray" };
+  };
+
+  const dockerStatusInfo = getDockerStatusInfo();
+
   return (
     <div className="flex h-screen bg-background text-foreground">
       <Sidebar
@@ -96,6 +174,19 @@ function App() {
         animate={{ paddingLeft: isSidebarCollapsed ? "1.5rem" : "1.5rem" }}
         transition={{ duration: 0.2 }}
       >
+        {dockerStatus &&
+          typeof dockerStatus === "object" &&
+          "Error" in dockerStatus && (
+            <Alert variant="destructive" className="mb-6">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Docker Connection Error</AlertTitle>
+              <AlertDescription>
+                {dockerStatus.Error}. Please make sure Docker is running and try
+                again.
+              </AlertDescription>
+            </Alert>
+          )}
+
         <AnimatePresence mode="wait">
           {currentView === "containers" && (
             <motion.div
@@ -148,7 +239,12 @@ function App() {
                     size="sm"
                     onClick={fetchData}
                     className="flex items-center gap-1"
-                    disabled={loading}
+                    disabled={
+                      loading ||
+                      !dockerStatus ||
+                      (typeof dockerStatus === "object" &&
+                        "Error" in dockerStatus)
+                    }
                   >
                     <RefreshCw
                       className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
@@ -158,7 +254,7 @@ function App() {
                 </div>
               </div>
 
-              {loading ? (
+              {loading && containers.length === 0 && images.length === 0 ? (
                 <div className="flex justify-center items-center h-64">
                   <motion.div
                     animate={{ rotate: 360 }}
@@ -199,11 +295,11 @@ function App() {
                     />
                     <DashboardCard
                       title="Docker"
-                      value="Running"
+                      value={dockerStatusInfo.text}
                       description="Engine status"
                       icon={<Database className="h-5 w-5" />}
                       onClick={() => {}}
-                      color="gray"
+                      color={dockerStatusInfo.color as any}
                     />
                   </div>
 
@@ -343,7 +439,7 @@ interface DashboardCardProps {
   description: string;
   icon: React.ReactNode;
   onClick: () => void;
-  color: "blue" | "green" | "purple" | "gray";
+  color: "blue" | "green" | "purple" | "gray" | "yellow" | "red";
 }
 
 const DashboardCard: React.FC<DashboardCardProps> = ({
@@ -364,6 +460,10 @@ const DashboardCard: React.FC<DashboardCardProps> = ({
         return "bg-purple-50 text-purple-700 border-purple-200";
       case "gray":
         return "bg-gray-50 text-gray-700 border-gray-200";
+      case "yellow":
+        return "bg-yellow-50 text-yellow-700 border-yellow-200";
+      case "red":
+        return "bg-red-50 text-red-700 border-red-200";
       default:
         return "bg-blue-50 text-blue-700 border-blue-200";
     }

@@ -2832,6 +2832,7 @@ version = "0.1.0"
 dependencies = [
  "bollard",
  "futures-util",
+ "once_cell",
  "serde",
  "serde_json",
  "tauri",
