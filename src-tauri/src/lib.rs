@@ -1,6 +1,5 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 use bollard::container::{ListContainersOptions, StartContainerOptions, StopContainerOptions};
-use bollard::image::ListImagesOptions;
 use bollard::Docker;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -118,14 +117,14 @@ async fn list_images() -> Result<Vec<ImageInfo>, String> {
 }
 
 // Helper function to parse human-readable size to bytes
-fn parse_size(size_str: &str) -> u64 {
+fn parse_size(_size_str: &str) -> u64 {
     // Simple implementation - just return 0 for now
     // In a real implementation, we would parse strings like "10MB", "1.2GB", etc.
     0
 }
 
 // Helper function to parse timestamp to Unix timestamp
-fn parse_timestamp(timestamp_str: &str) -> u64 {
+fn parse_timestamp(_timestamp_str: &str) -> u64 {
     // Simple implementation - just return 0 for now
     // In a real implementation, we would parse the timestamp string
     0
