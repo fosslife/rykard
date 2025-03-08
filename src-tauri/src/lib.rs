@@ -1,5 +1,7 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-use bollard::container::{ListContainersOptions, StartContainerOptions, StopContainerOptions};
+use bollard::container::{
+    ListContainersOptions, StartContainerOptions, Stats, StopContainerOptions,
+};
 use bollard::Docker;
 use chrono::{NaiveDateTime, Utc};
 use futures_util::StreamExt;
@@ -228,54 +230,49 @@ async fn list_containers(
 }
 
 #[tauri::command]
-async fn list_images(_state: State<'_, DockerStateManager>) -> Result<Vec<ImageInfo>, String> {
-    // Use the docker CLI command instead of the Bollard API to avoid type issues
-    let output = Command::new("docker")
-        .args(&[
-            "images",
-            "--format",
-            "{{.ID}}|{{.Repository}}:{{.Tag}}|{{.Size}}|{{.CreatedAt}}",
-        ])
-        .output();
-
-    match output {
-        Ok(output) => {
-            if output.status.success() {
-                let output_str = String::from_utf8_lossy(&output.stdout).to_string();
-                let mut image_info = Vec::new();
-
-                for line in output_str.lines() {
-                    let parts: Vec<&str> = line.split('|').collect();
-                    if parts.len() >= 4 {
-                        let id = parts[0].to_string();
-                        let repo_tag = parts[1].to_string();
-                        let repo_tags = vec![repo_tag];
-
-                        // Parse size (convert human-readable size to bytes)
-                        let size_str = parts[2];
-                        let size = parse_size(size_str);
-
-                        // Parse created timestamp
-                        let created_str = parts[3];
-                        let created = parse_timestamp(created_str);
-
-                        image_info.push(ImageInfo {
-                            id,
-                            repo_tags,
-                            size,
-                            created,
-                        });
-                    }
-                }
-
-                Ok(image_info)
-            } else {
-                let error = String::from_utf8_lossy(&output.stderr).to_string();
-
-                Err(format!("Failed to list images: {}", error))
-            }
+async fn list_images(state: State<'_, DockerStateManager>) -> Result<Vec<ImageInfo>, String> {
+    // Get the Docker client
+    let docker = {
+        let docker_state = state.lock().await;
+        match docker_state.get_client() {
+            Ok(client) => client,
+            Err(e) => return Err(e.to_string()),
         }
-        Err(e) => Err(format!("Failed to execute command: {}", e)),
+    };
+
+    // Use Bollard's list_images API
+    let options = Some(bollard::image::ListImagesOptions::<String> {
+        all: false, // Only show available images
+        ..Default::default()
+    });
+
+    match docker.list_images(options).await {
+        Ok(images) => {
+            let image_info = images
+                .iter()
+                .map(|image| {
+                    // Extract repo tags
+                    let repo_tags = image.repo_tags.clone();
+
+                    // Extract image ID (remove "sha256:" prefix if present)
+                    let id = image.id.trim_start_matches("sha256:").to_string();
+
+                    // Extract size and created timestamp
+                    let size = image.size as u64;
+                    let created = image.created as u64;
+
+                    ImageInfo {
+                        id,
+                        repo_tags,
+                        size,
+                        created,
+                    }
+                })
+                .collect();
+
+            Ok(image_info)
+        }
+        Err(e) => Err(DockerError::from(e).to_string()),
     }
 }
 
@@ -601,113 +598,154 @@ pub struct ContainerStats {
 #[tauri::command]
 async fn get_container_stats(
     container_id: &str,
-    _state: State<'_, DockerStateManager>,
+    state: State<'_, DockerStateManager>,
 ) -> Result<ContainerStats, String> {
-    // We don't need the Docker client for this function since we're using the CLI
+    // Get the Docker client
+    let docker = {
+        let docker_state = state.lock().await;
+        match docker_state.get_client() {
+            Ok(client) => client,
+            Err(e) => return Err(e.to_string()),
+        }
+    };
 
-    // Use the Docker CLI command for stats since Bollard's stats API is more complex to work with
-    let output = Command::new("docker")
-        .args(&[
-            "stats",
-            "--no-stream",
-            "--format",
-            "{{.CPUPerc}}|{{.MemUsage}}|{{.MemPerc}}|{{.NetIO}}|{{.BlockIO}}",
-            container_id,
-        ])
-        .output();
+    // Use Bollard's stats API to get container stats
+    // We need to create a stream and get the first result
+    let stats_options = bollard::container::StatsOptions {
+        stream: false, // We only want one stats snapshot
+        ..Default::default()
+    };
 
-    match output {
-        Ok(output) => {
-            if output.status.success() {
-                let output_str = String::from_utf8_lossy(&output.stdout).to_string();
-                let lines: Vec<&str> = output_str.lines().collect();
+    let mut stats_stream = docker.stats(container_id, Some(stats_options));
 
-                if lines.is_empty() {
-                    return Err(DockerError::NotFound(format!(
-                        "No stats found for container {}",
-                        container_id
-                    ))
-                    .to_string());
-                }
+    // Get the first (and only) stats result
+    match stats_stream.next().await {
+        Some(Ok(stats)) => {
+            // Calculate CPU usage percentage
+            let cpu_usage_percent = calculate_cpu_percentage(&stats);
 
-                let parts: Vec<&str> = lines[0].split('|').collect();
-                if parts.len() < 5 {
-                    return Err(
-                        DockerError::OperationError("Invalid stats format".to_string()).to_string(),
-                    );
-                }
+            // Get memory usage and limit
+            let memory_usage = match &stats.memory_stats.usage {
+                Some(usage) => *usage,
+                None => 0,
+            };
 
-                // Parse CPU percentage (remove % sign)
-                let cpu_str = parts[0].trim_end_matches('%');
-                let cpu_usage_percent = cpu_str.parse::<f64>().unwrap_or(0.0);
+            let memory_limit = match &stats.memory_stats.limit {
+                Some(limit) => *limit,
+                None => 0,
+            };
 
-                // Parse memory usage (format: "100MiB / 1.944GiB")
-                let mem_parts: Vec<&str> = parts[1].split('/').collect();
-                let memory_usage = if mem_parts.len() > 0 {
-                    parse_size(mem_parts[0].trim())
-                } else {
-                    0
-                };
-
-                let memory_limit = if mem_parts.len() > 1 {
-                    parse_size(mem_parts[1].trim())
-                } else {
-                    0
-                };
-
-                // Parse memory percentage (remove % sign)
-                let mem_percent_str = parts[2].trim_end_matches('%');
-                let memory_usage_percent = mem_percent_str.parse::<f64>().unwrap_or(0.0);
-
-                // Parse network I/O (format: "1.45kB / 2.3MB")
-                let net_parts: Vec<&str> = parts[3].split('/').collect();
-                let network_rx_bytes = if net_parts.len() > 0 {
-                    parse_size(net_parts[0].trim())
-                } else {
-                    0
-                };
-
-                let network_tx_bytes = if net_parts.len() > 1 {
-                    parse_size(net_parts[1].trim())
-                } else {
-                    0
-                };
-
-                // Parse block I/O (format: "0B / 0B")
-                let block_parts: Vec<&str> = parts[4].split('/').collect();
-                let block_read_bytes = if block_parts.len() > 0 {
-                    parse_size(block_parts[0].trim())
-                } else {
-                    0
-                };
-
-                let block_write_bytes = if block_parts.len() > 1 {
-                    parse_size(block_parts[1].trim())
-                } else {
-                    0
-                };
-
-                Ok(ContainerStats {
-                    cpu_usage_percent,
-                    memory_usage,
-                    memory_limit,
-                    memory_usage_percent,
-                    network_rx_bytes,
-                    network_tx_bytes,
-                    block_read_bytes,
-                    block_write_bytes,
-                })
+            // Calculate memory usage percentage
+            let memory_usage_percent = if memory_limit > 0 {
+                (memory_usage as f64 / memory_limit as f64) * 100.0
             } else {
-                let error = String::from_utf8_lossy(&output.stderr).to_string();
-                Err(DockerError::OperationError(format!(
-                    "Failed to get container stats: {}",
-                    error
-                ))
-                .to_string())
+                0.0
+            };
+
+            // Get network I/O
+            let (network_rx_bytes, network_tx_bytes) = get_network_stats(&stats);
+
+            // Get block I/O
+            let (block_read_bytes, block_write_bytes) = get_block_io_stats(&stats);
+
+            Ok(ContainerStats {
+                cpu_usage_percent,
+                memory_usage,
+                memory_limit,
+                memory_usage_percent,
+                network_rx_bytes,
+                network_tx_bytes,
+                block_read_bytes,
+                block_write_bytes,
+            })
+        }
+        Some(Err(e)) => Err(DockerError::from(e).to_string()),
+        None => Err(DockerError::NotFound(format!(
+            "No stats found for container {}",
+            container_id
+        ))
+        .to_string()),
+    }
+}
+
+/// Calculate CPU usage percentage from stats
+fn calculate_cpu_percentage(stats: &Stats) -> f64 {
+    // Extract CPU usage data
+    let cpu_usage = stats.cpu_stats.cpu_usage.total_usage;
+    let precpu_usage = stats.precpu_stats.cpu_usage.total_usage;
+    let cpu_delta = if cpu_usage > precpu_usage {
+        (cpu_usage - precpu_usage) as i64
+    } else {
+        0
+    };
+
+    let system_cpu_usage = match stats.cpu_stats.system_cpu_usage {
+        Some(usage) => usage,
+        None => 0,
+    };
+
+    let system_precpu_usage = match stats.precpu_stats.system_cpu_usage {
+        Some(usage) => usage,
+        None => 0,
+    };
+
+    let system_delta = if system_cpu_usage > system_precpu_usage {
+        (system_cpu_usage - system_precpu_usage) as i64
+    } else {
+        0
+    };
+
+    let online_cpus = match stats.cpu_stats.online_cpus {
+        Some(cpus) => cpus as f64,
+        None => 1.0,
+    };
+
+    // Calculate percentage
+    if system_delta > 0 && cpu_delta > 0 {
+        ((cpu_delta as f64 / system_delta as f64) * online_cpus) * 100.0
+    } else {
+        0.0
+    }
+}
+
+/// Extract network stats from container stats
+fn get_network_stats(stats: &Stats) -> (u64, u64) {
+    if let Some(networks) = &stats.networks {
+        let mut rx_bytes = 0;
+        let mut tx_bytes = 0;
+
+        for (_interface, network) in networks {
+            rx_bytes += network.rx_bytes;
+            tx_bytes += network.tx_bytes;
+        }
+
+        (rx_bytes, tx_bytes)
+    } else {
+        (0, 0)
+    }
+}
+
+/// Extract block I/O stats from container stats
+fn get_block_io_stats(stats: &Stats) -> (u64, u64) {
+    let blkio_stats = &stats.blkio_stats;
+
+    if let Some(io_service_bytes_recursive) = &blkio_stats.io_service_bytes_recursive {
+        let mut read_bytes = 0;
+        let mut write_bytes = 0;
+
+        for stat in io_service_bytes_recursive {
+            // op is a String, not an Option<String>
+            if stat.op == "Read" {
+                read_bytes += stat.value;
+            } else if stat.op == "Write" {
+                write_bytes += stat.value;
             }
         }
-        Err(e) => Err(DockerError::from(e).to_string()),
+
+        return (read_bytes, write_bytes);
     }
+
+    (0, 0)
 }
 
 #[derive(Debug, Serialize, Deserialize)]
