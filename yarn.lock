@@ -749,7 +749,7 @@
     lightningcss "^1.29.1"
     tailwindcss "4.0.12"
 
-"@tauri-apps/api@^2":
+"@tauri-apps/api@^2", "@tauri-apps/api@^2.0.0":
   version "2.3.0"
   resolved "https://registry.yarnpkg.com/@tauri-apps/api/-/api-2.3.0.tgz#8ced2a5e5f1d30d585a22b11dff2cbdfa3f9eab2"
   integrity sha512-33Z+0lX2wgZbx1SPFfqvzI6su63hCBkbzv+5NexeYjIx7WA9htdOKoRR7Dh3dJyltqS5/J8vQFyybiRoaL0hlA==
@@ -819,6 +819,13 @@
     "@tauri-apps/cli-win32-arm64-msvc" "2.3.1"
     "@tauri-apps/cli-win32-ia32-msvc" "2.3.1"
     "@tauri-apps/cli-win32-x64-msvc" "2.3.1"
+
+"@tauri-apps/plugin-window-state@~2":
+  version "2.2.1"
+  resolved "https://registry.yarnpkg.com/@tauri-apps/plugin-window-state/-/plugin-window-state-2.2.1.tgz#11bbc9d4445c0ef31893198b2d9d949c4f02a454"
+  integrity sha512-L7FhG/ocQNt8t+TMBkvl8eLhCU6I19t848unKMUgNHuvwHPaurzZr4knulNyKzqz7zVYSz9AdvgWy4915eq+AA==
+  dependencies:
+    "@tauri-apps/api" "^2.0.0"
 
 "@types/babel__core@^7.20.5":
   version "7.20.5"

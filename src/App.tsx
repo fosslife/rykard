@@ -22,6 +22,12 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  restoreStateCurrent,
+  saveWindowState,
+  StateFlags,
+} from "@tauri-apps/plugin-window-state";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 type View = "containers" | "images" | "dashboard";
 
@@ -39,12 +45,6 @@ interface ImageInfo {
   size: number;
   created: number;
 }
-
-// Docker status can be one of these enum variants
-// type DockerStatus =
-//   | { Connected: null }
-//   | { Disconnected: null }
-//   | { Error: string };
 
 enum DockerStatus {
   Connected = "Connected",
@@ -131,6 +131,17 @@ function App() {
       return () => clearInterval(interval);
     }
   }, [currentView, dockerStatus]);
+
+  useEffect(() => {
+    restoreStateCurrent(StateFlags.ALL);
+    let unlisten = getCurrentWindow().onCloseRequested(() => {
+      saveWindowState(StateFlags.ALL);
+    });
+
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
 
   const runningContainers = containers.filter(
     (c) => c.state === "running"

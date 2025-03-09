@@ -917,6 +917,7 @@ async fn get_container_config(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_window_state::Builder::new().build())
         .setup(|app| {
             // Initialize Docker state with tokio Mutex
             app.manage(Arc::new(Mutex::new(DockerState::default())));
