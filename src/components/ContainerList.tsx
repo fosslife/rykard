@@ -13,7 +13,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { RefreshCw, Play, Square, Trash, FileText, Info } from "lucide-react";
+import {
+  RefreshCw,
+  Play,
+  Square,
+  Trash,
+  FileText,
+  Info,
+  ChevronDown,
+  ChevronRight,
+} from "lucide-react";
 import { useDockerEvents } from "@/lib/docker-events-context";
 import { DockerEvent, isContainerEvent } from "@/lib/docker-events";
 
@@ -23,6 +32,7 @@ interface ContainerInfo {
   image: string;
   state: string;
   status: string;
+  labels: Record<string, string>;
 }
 
 interface ContainerListProps {
@@ -31,6 +41,13 @@ interface ContainerListProps {
   lastRefreshed: Date;
   onRefresh: () => Promise<void>;
   onContainerSelect?: (container: ContainerInfo) => void;
+}
+
+// Interface for grouped containers
+interface ComposeGroup {
+  projectName: string;
+  containers: ContainerInfo[];
+  isExpanded: boolean;
 }
 
 const ContainerList: React.FC<ContainerListProps> = ({
@@ -48,6 +65,8 @@ const ContainerList: React.FC<ContainerListProps> = ({
   const [affectedContainers, setAffectedContainers] = useState<Set<string>>(
     new Set()
   );
+  const [composeGroups, setComposeGroups] = useState<ComposeGroup[]>([]);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   // Get Docker events
   const { addEventHandler, removeEventHandler } = useDockerEvents();
@@ -82,6 +101,63 @@ const ContainerList: React.FC<ContainerListProps> = ({
       removeEventHandler(handleContainerEvent);
     };
   }, [addEventHandler, removeEventHandler]);
+
+  // Group containers by Compose project
+  useEffect(() => {
+    // First, identify standalone containers and Compose containers
+    const standaloneContainers: ContainerInfo[] = [];
+    const composeContainers: ContainerInfo[] = [];
+
+    containers.forEach((container) => {
+      // Check if container has Compose labels
+      if (container.labels["com.docker.compose.project"]) {
+        composeContainers.push(container);
+      } else {
+        standaloneContainers.push(container);
+      }
+    });
+
+    // Group Compose containers by project only (not by service)
+    const groupMap = new Map<string, ComposeGroup>();
+
+    composeContainers.forEach((container) => {
+      const projectName =
+        container.labels["com.docker.compose.project"] || "unknown";
+
+      if (!groupMap.has(projectName)) {
+        groupMap.set(projectName, {
+          projectName,
+          containers: [],
+          isExpanded: expandedGroups.has(projectName),
+        });
+      }
+
+      groupMap.get(projectName)?.containers.push(container);
+    });
+
+    // Convert the map to an array
+    const groups = Array.from(groupMap.values());
+
+    // Sort groups by project name
+    groups.sort((a, b) => a.projectName.localeCompare(b.projectName));
+
+    setComposeGroups(groups);
+  }, [containers, expandedGroups]);
+
+  // Toggle group expansion
+  const toggleGroupExpansion = (projectName: string) => {
+    setExpandedGroups((prev) => {
+      const newSet = new Set(prev);
+
+      if (newSet.has(projectName)) {
+        newSet.delete(projectName);
+      } else {
+        newSet.add(projectName);
+      }
+
+      return newSet;
+    });
+  };
 
   const handleStartContainer = async (containerId: string) => {
     try {
@@ -141,6 +217,11 @@ const ContainerList: React.FC<ContainerListProps> = ({
     }
   };
 
+  // Get standalone containers (not part of Compose)
+  const standaloneContainers = containers.filter(
+    (container) => !container.labels["com.docker.compose.project"]
+  );
+
   // Format the last refreshed time
   const formatLastRefreshed = () => {
     if (!lastRefreshed) return "Never";
@@ -199,12 +280,174 @@ const ContainerList: React.FC<ContainerListProps> = ({
                     <TableHead>Name</TableHead>
                     <TableHead>Image</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>State</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {containers.map((container) => (
+                  {/* Render Compose groups */}
+                  {composeGroups.map((group) => {
+                    const isExpanded = expandedGroups.has(group.projectName);
+
+                    // Get the first container to represent the group
+                    const representativeContainer = group.containers[0];
+
+                    // Determine if any container in the group is running
+                    const isAnyRunning = group.containers.some(
+                      (c) => c.state === "running"
+                    );
+
+                    return (
+                      <React.Fragment key={group.projectName}>
+                        {/* Group row */}
+                        <TableRow
+                          className="group cursor-pointer hover:bg-muted/50"
+                          onClick={() =>
+                            toggleGroupExpansion(group.projectName)
+                          }
+                        >
+                          <TableCell className="font-medium">
+                            <div className="flex items-center">
+                              {isExpanded ? (
+                                <ChevronDown className="h-4 w-4 mr-2 text-muted-foreground" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4 mr-2 text-muted-foreground" />
+                              )}
+                              <span className="font-semibold">
+                                {group.projectName}
+                              </span>
+                              <Badge className="ml-2" variant="outline">
+                                {group.containers.length}
+                              </Badge>
+                            </div>
+                          </TableCell>
+                          <TableCell>Multiple services</TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={isAnyRunning ? "default" : "secondary"}
+                            >
+                              {isAnyRunning ? "Running" : "Stopped"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              {/* Group actions can be added here if needed */}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+
+                        {/* Individual containers in the group */}
+                        {isExpanded &&
+                          group.containers.map((container) => (
+                            <TableRow
+                              key={container.id}
+                              className={`bg-muted/20 ${
+                                affectedContainers.has(container.id)
+                                  ? "bg-primary/10 transition-colors duration-500"
+                                  : ""
+                              }`}
+                            >
+                              <TableCell className="font-medium pl-10">
+                                {container.labels[
+                                  "com.docker.compose.service"
+                                ] ||
+                                  container.names[0] ||
+                                  "Unnamed"}
+                              </TableCell>
+                              <TableCell>{container.image}</TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant={
+                                    container.state === "running"
+                                      ? "default"
+                                      : "secondary"
+                                  }
+                                >
+                                  {container.state}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex justify-end gap-2">
+                                  {container.state === "running" ? (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleStopContainer(container.id);
+                                      }}
+                                      title="Stop Container"
+                                    >
+                                      <Square className="h-4 w-4" />
+                                      <span className="sr-only">Stop</span>
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleStartContainer(container.id);
+                                      }}
+                                      title="Start Container"
+                                    >
+                                      <Play className="h-4 w-4" />
+                                      <span className="sr-only">Start</span>
+                                    </Button>
+                                  )}
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleViewLogs(
+                                        container.id,
+                                        container.names[0] ||
+                                          container.id.substring(0, 12)
+                                      );
+                                    }}
+                                    title="View Logs"
+                                  >
+                                    <FileText className="h-4 w-4" />
+                                    <span className="sr-only">View Logs</span>
+                                  </Button>
+
+                                  {onContainerSelect && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleViewDetails(container);
+                                      }}
+                                      title="View Details"
+                                    >
+                                      <Info className="h-4 w-4" />
+                                      <span className="sr-only">Details</span>
+                                    </Button>
+                                  )}
+
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRemoveContainer(container.id);
+                                    }}
+                                    title="Remove Container"
+                                  >
+                                    <Trash className="h-4 w-4" />
+                                    <span className="sr-only">Remove</span>
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                      </React.Fragment>
+                    );
+                  })}
+
+                  {/* Render standalone containers */}
+                  {standaloneContainers.map((container) => (
                     <TableRow
                       key={container.id}
                       className={
@@ -216,14 +459,13 @@ const ContainerList: React.FC<ContainerListProps> = ({
                       <TableCell className="font-medium">
                         {container.names[0] || "Unnamed"}
                       </TableCell>
-                      <TableCell className="max-w-[200px] truncate">
-                        {container.image}
-                      </TableCell>
-                      <TableCell>{container.status}</TableCell>
+                      <TableCell>{container.image}</TableCell>
                       <TableCell>
                         <Badge
                           variant={
-                            getStatusBadgeVariant(container.state) as any
+                            container.state === "running"
+                              ? "default"
+                              : "secondary"
                           }
                         >
                           {container.state}
@@ -231,6 +473,27 @@ const ContainerList: React.FC<ContainerListProps> = ({
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
+                          {container.state === "running" ? (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleStopContainer(container.id)}
+                              title="Stop Container"
+                            >
+                              <Square className="h-4 w-4" />
+                              <span className="sr-only">Stop</span>
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleStartContainer(container.id)}
+                              title="Start Container"
+                            >
+                              <Play className="h-4 w-4" />
+                              <span className="sr-only">Start</span>
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"
@@ -244,35 +507,7 @@ const ContainerList: React.FC<ContainerListProps> = ({
                             title="View Logs"
                           >
                             <FileText className="h-4 w-4" />
-                          </Button>
-
-                          {container.state === "running" ? (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleStopContainer(container.id)}
-                            >
-                              <Square className="h-4 w-4" />
-                              <span className="sr-only">Stop</span>
-                            </Button>
-                          ) : (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleStartContainer(container.id)}
-                            >
-                              <Play className="h-4 w-4" />
-                              <span className="sr-only">Start</span>
-                            </Button>
-                          )}
-
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => handleRemoveContainer(container.id)}
-                          >
-                            <Trash className="h-4 w-4" />
-                            <span className="sr-only">Remove</span>
+                            <span className="sr-only">View Logs</span>
                           </Button>
 
                           {onContainerSelect && (
@@ -283,8 +518,19 @@ const ContainerList: React.FC<ContainerListProps> = ({
                               title="View Details"
                             >
                               <Info className="h-4 w-4" />
+                              <span className="sr-only">Details</span>
                             </Button>
                           )}
+
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleRemoveContainer(container.id)}
+                            title="Remove Container"
+                          >
+                            <Trash className="h-4 w-4" />
+                            <span className="sr-only">Remove</span>
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>

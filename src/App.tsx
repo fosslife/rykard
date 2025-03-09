@@ -45,6 +45,7 @@ interface ContainerInfo {
   image: string;
   state: string;
   status: string;
+  labels: Record<string, string>;
 }
 
 interface ImageInfo {

@@ -19,6 +19,7 @@ pub struct ContainerInfo {
     image: String,
     state: String,
     status: String,
+    labels: HashMap<String, String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -213,12 +214,21 @@ async fn list_containers(
                         .map(|name| name.trim_start_matches('/').to_string())
                         .collect();
 
+                    // Extract labels
+                    let labels = container
+                        .labels
+                        .clone()
+                        .unwrap_or_default()
+                        .into_iter()
+                        .collect();
+
                     ContainerInfo {
                         id: container.id.clone().unwrap_or_default(),
                         names,
                         image: container.image.clone().unwrap_or_default(),
                         state: container.state.clone().unwrap_or_default(),
                         status: container.status.clone().unwrap_or_default(),
+                        labels,
                     }
                 })
                 .collect();
