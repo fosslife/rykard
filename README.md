@@ -1,7 +1,9 @@
-# Tauri + React + Typescript
+# Rykard
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+the next generation docker desktop
 
-## Recommended IDE Setup
+## Features
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+> This project is still in early development. Most of the features work but expect bugs and missing features.
+
+![Rykard](./banner.png)
