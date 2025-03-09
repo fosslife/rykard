@@ -56,6 +56,13 @@ This project aims to create a lightweight Docker Desktop alternative using Tauri
   - [x] Group containers by Compose project
   - [x] Expand/collapse container groups
   - [x] Visual distinction for Compose containers
+- [x] Container List Enhancements
+  - [x] Status indicators (colored dots)
+  - [x] Container ID display
+  - [x] Port mapping information
+  - [x] Human-readable status with started time
+  - [x] Clickable rows for container details
+  - [x] Relative time formatting
 - [ ] Container creation
   - [ ] Basic container creation form
   - [ ] Environment variables configuration
@@ -104,6 +111,7 @@ This project aims to create a lightweight Docker Desktop alternative using Tauri
   - Real-time updates with Docker events
   - Container details with stats and configuration
   - Docker Compose container grouping
+  - Enhanced container list with additional information
 - **In Progress**: Container creation
 - **Next Up**: Docker Compose support
 

@@ -39,6 +39,13 @@ import {
 
 type View = "containers" | "images" | "dashboard" | "container-details";
 
+interface PortInfo {
+  ip: string;
+  private_port: number;
+  public_port: number;
+  type_: string;
+}
+
 interface ContainerInfo {
   id: string;
   names: string[];
@@ -46,6 +53,8 @@ interface ContainerInfo {
   state: string;
   status: string;
   labels: Record<string, string>;
+  ports: PortInfo[];
+  created: number;
 }
 
 interface ImageInfo {

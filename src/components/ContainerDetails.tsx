@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/table";
 import { useDockerEvents } from "@/lib/docker-events-context";
 import { DockerEvent, isContainerEvent, debounce } from "@/lib/docker-events";
+import { format } from "timeago.js";
 
 interface ContainerStats {
   cpu_usage_percent: number;
@@ -429,7 +430,8 @@ export default function ContainerDetails({
                   <TableRow>
                     <TableCell className="font-medium">Created</TableCell>
                     <TableCell>
-                      {new Date(config.created).toLocaleString()}
+                      {format(new Date(config.created))} (
+                      {new Date(config.created).toLocaleString()})
                     </TableCell>
                   </TableRow>
                   <TableRow>

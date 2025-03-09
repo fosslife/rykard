@@ -20,6 +20,16 @@ pub struct ContainerInfo {
     state: String,
     status: String,
     labels: HashMap<String, String>,
+    ports: Vec<PortInfo>,
+    created: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PortInfo {
+    ip: String,
+    private_port: u16,
+    public_port: u16,
+    type_: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -222,6 +232,27 @@ async fn list_containers(
                         .into_iter()
                         .collect();
 
+                    // Extract ports
+                    let ports = container
+                        .ports
+                        .clone()
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|port| {
+                            let port_type = match &port.typ {
+                                Some(t) => format!("{}", t),
+                                None => "tcp".to_string(),
+                            };
+
+                            PortInfo {
+                                ip: port.ip.unwrap_or_default(),
+                                private_port: port.private_port,
+                                public_port: port.public_port.unwrap_or_default(),
+                                type_: port_type,
+                            }
+                        })
+                        .collect();
+
                     ContainerInfo {
                         id: container.id.clone().unwrap_or_default(),
                         names,
@@ -229,6 +260,8 @@ async fn list_containers(
                         state: container.state.clone().unwrap_or_default(),
                         status: container.status.clone().unwrap_or_default(),
                         labels,
+                        ports,
+                        created: container.created.unwrap_or_default() as u64,
                     }
                 })
                 .collect();

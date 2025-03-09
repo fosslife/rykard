@@ -25,6 +25,14 @@ import {
 } from "lucide-react";
 import { useDockerEvents } from "@/lib/docker-events-context";
 import { DockerEvent, isContainerEvent } from "@/lib/docker-events";
+import { format } from "timeago.js";
+
+interface PortInfo {
+  ip: string;
+  private_port: number;
+  public_port: number;
+  type_: string;
+}
 
 interface ContainerInfo {
   id: string;
@@ -33,6 +41,8 @@ interface ContainerInfo {
   state: string;
   status: string;
   labels: Record<string, string>;
+  ports: PortInfo[];
+  created: number;
 }
 
 interface ContainerListProps {
@@ -49,6 +59,43 @@ interface ComposeGroup {
   containers: ContainerInfo[];
   isExpanded: boolean;
 }
+
+// Format timestamp to human-readable relative time
+const formatDate = (timestamp: number): string => {
+  if (!timestamp) return "Unknown";
+
+  const date = new Date(timestamp * 1000);
+  return format(date); // This will return strings like "5 minutes ago"
+};
+
+// Extract started time from status string
+const getStartedTime = (status: string): string => {
+  if (!status) return "Not started";
+
+  // Status format is typically "Up 3 hours" or "Exited (0) 5 hours ago"
+  if (status.startsWith("Up")) {
+    // For running containers, return "Running for X time"
+    return status.replace("Up", "Running for");
+  } else if (status.includes("Exited")) {
+    // For stopped containers, return when it exited
+    const match = status.match(/Exited \(\d+\) (.*)/);
+    if (match && match[1]) {
+      return `Stopped ${match[1]}`;
+    }
+  }
+
+  return status;
+};
+
+// Format ports to readable string
+const formatPorts = (ports: PortInfo[]): string => {
+  if (!ports || ports.length === 0) return "None";
+
+  return ports
+    .filter((port) => port.public_port)
+    .map((port) => `${port.public_port}:${port.private_port}/${port.type_}`)
+    .join(", ");
+};
 
 const ContainerList: React.FC<ContainerListProps> = ({
   containers,
@@ -224,9 +271,9 @@ const ContainerList: React.FC<ContainerListProps> = ({
 
   // Format the last refreshed time
   const formatLastRefreshed = () => {
-    if (!lastRefreshed) return "Never";
-
-    return new Date(lastRefreshed).toLocaleTimeString();
+    return `Last refreshed: ${format(
+      lastRefreshed
+    )} (${lastRefreshed.toLocaleTimeString()})`;
   };
 
   return (
@@ -238,7 +285,7 @@ const ContainerList: React.FC<ContainerListProps> = ({
         </div>
         <div className="flex items-center gap-2">
           <p className="text-sm text-muted-foreground">
-            Last updated: {formatLastRefreshed()}
+            {formatLastRefreshed()}
           </p>
           <Button
             variant="outline"
@@ -277,8 +324,11 @@ const ContainerList: React.FC<ContainerListProps> = ({
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-[30px]"></TableHead>
                     <TableHead>Name</TableHead>
+                    <TableHead>ID</TableHead>
                     <TableHead>Image</TableHead>
+                    <TableHead>Ports</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -305,6 +355,13 @@ const ContainerList: React.FC<ContainerListProps> = ({
                             toggleGroupExpansion(group.projectName)
                           }
                         >
+                          <TableCell>
+                            <div
+                              className={`w-3 h-3 rounded-full ${
+                                isAnyRunning ? "bg-green-500" : "bg-gray-300"
+                              }`}
+                            ></div>
+                          </TableCell>
                           <TableCell className="font-medium">
                             <div className="flex items-center">
                               {isExpanded ? (
@@ -320,14 +377,10 @@ const ContainerList: React.FC<ContainerListProps> = ({
                               </Badge>
                             </div>
                           </TableCell>
+                          <TableCell>-</TableCell>
                           <TableCell>Multiple services</TableCell>
-                          <TableCell>
-                            <Badge
-                              variant={isAnyRunning ? "default" : "secondary"}
-                            >
-                              {isAnyRunning ? "Running" : "Stopped"}
-                            </Badge>
-                          </TableCell>
+                          <TableCell>-</TableCell>
+                          <TableCell>-</TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
                               {/* Group actions can be added here if needed */}
@@ -340,12 +393,25 @@ const ContainerList: React.FC<ContainerListProps> = ({
                           group.containers.map((container) => (
                             <TableRow
                               key={container.id}
-                              className={`bg-muted/20 ${
+                              className={`bg-muted/20 cursor-pointer hover:bg-muted/50 ${
                                 affectedContainers.has(container.id)
                                   ? "bg-primary/10 transition-colors duration-500"
                                   : ""
                               }`}
+                              onClick={() =>
+                                onContainerSelect &&
+                                onContainerSelect(container)
+                              }
                             >
+                              <TableCell>
+                                <div
+                                  className={`w-3 h-3 rounded-full ${
+                                    container.state === "running"
+                                      ? "bg-green-500"
+                                      : "bg-gray-300"
+                                  }`}
+                                ></div>
+                              </TableCell>
                               <TableCell className="font-medium pl-10">
                                 {container.labels[
                                   "com.docker.compose.service"
@@ -353,20 +419,21 @@ const ContainerList: React.FC<ContainerListProps> = ({
                                   container.names[0] ||
                                   "Unnamed"}
                               </TableCell>
+                              <TableCell className="font-mono text-xs">
+                                {container.id.substring(0, 8)}
+                              </TableCell>
                               <TableCell>{container.image}</TableCell>
                               <TableCell>
-                                <Badge
-                                  variant={
-                                    container.state === "running"
-                                      ? "default"
-                                      : "secondary"
-                                  }
-                                >
-                                  {container.state}
-                                </Badge>
+                                {formatPorts(container.ports)}
+                              </TableCell>
+                              <TableCell>
+                                {getStartedTime(container.status)}
                               </TableCell>
                               <TableCell className="text-right">
-                                <div className="flex justify-end gap-2">
+                                <div
+                                  className="flex justify-end gap-2"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
                                   {container.state === "running" ? (
                                     <Button
                                       variant="ghost"
@@ -411,21 +478,6 @@ const ContainerList: React.FC<ContainerListProps> = ({
                                     <span className="sr-only">View Logs</span>
                                   </Button>
 
-                                  {onContainerSelect && (
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleViewDetails(container);
-                                      }}
-                                      title="View Details"
-                                    >
-                                      <Info className="h-4 w-4" />
-                                      <span className="sr-only">Details</span>
-                                    </Button>
-                                  )}
-
                                   <Button
                                     variant="ghost"
                                     size="icon"
@@ -450,34 +502,46 @@ const ContainerList: React.FC<ContainerListProps> = ({
                   {standaloneContainers.map((container) => (
                     <TableRow
                       key={container.id}
-                      className={
+                      className={`cursor-pointer hover:bg-muted/50 ${
                         affectedContainers.has(container.id)
                           ? "bg-primary/10 transition-colors duration-500"
                           : ""
+                      }`}
+                      onClick={() =>
+                        onContainerSelect && onContainerSelect(container)
                       }
                     >
+                      <TableCell>
+                        <div
+                          className={`w-3 h-3 rounded-full ${
+                            container.state === "running"
+                              ? "bg-green-500"
+                              : "bg-gray-300"
+                          }`}
+                        ></div>
+                      </TableCell>
                       <TableCell className="font-medium">
                         {container.names[0] || "Unnamed"}
                       </TableCell>
-                      <TableCell>{container.image}</TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={
-                            container.state === "running"
-                              ? "default"
-                              : "secondary"
-                          }
-                        >
-                          {container.state}
-                        </Badge>
+                      <TableCell className="font-mono text-xs">
+                        {container.id.substring(0, 8)}
                       </TableCell>
+                      <TableCell>{container.image}</TableCell>
+                      <TableCell>{formatPorts(container.ports)}</TableCell>
+                      <TableCell>{getStartedTime(container.status)}</TableCell>
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
+                        <div
+                          className="flex justify-end gap-2"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           {container.state === "running" ? (
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => handleStopContainer(container.id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleStopContainer(container.id);
+                              }}
                               title="Stop Container"
                             >
                               <Square className="h-4 w-4" />
@@ -487,7 +551,10 @@ const ContainerList: React.FC<ContainerListProps> = ({
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => handleStartContainer(container.id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleStartContainer(container.id);
+                              }}
                               title="Start Container"
                             >
                               <Play className="h-4 w-4" />
@@ -497,35 +564,27 @@ const ContainerList: React.FC<ContainerListProps> = ({
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() =>
+                            onClick={(e) => {
+                              e.stopPropagation();
                               handleViewLogs(
                                 container.id,
                                 container.names[0] ||
                                   container.id.substring(0, 12)
-                              )
-                            }
+                              );
+                            }}
                             title="View Logs"
                           >
                             <FileText className="h-4 w-4" />
                             <span className="sr-only">View Logs</span>
                           </Button>
 
-                          {onContainerSelect && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleViewDetails(container)}
-                              title="View Details"
-                            >
-                              <Info className="h-4 w-4" />
-                              <span className="sr-only">Details</span>
-                            </Button>
-                          )}
-
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => handleRemoveContainer(container.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveContainer(container.id);
+                            }}
                             title="Remove Container"
                           >
                             <Trash className="h-4 w-4" />

@@ -15,6 +15,7 @@ import {
 import { RefreshCw, Trash, Download } from "lucide-react";
 import { useDockerEvents } from "@/lib/docker-events-context";
 import { DockerEvent, isImageEvent } from "@/lib/docker-events";
+import { format } from "timeago.js";
 
 interface ImageInfo {
   id: string;
@@ -86,16 +87,19 @@ const ImageList: React.FC<ImageListProps> = ({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
-  // Format timestamp to human-readable date
+  // Format timestamp to human-readable relative time
   const formatDate = (timestamp: number): string => {
-    return new Date(timestamp * 1000).toLocaleString();
+    if (!timestamp) return "Unknown";
+
+    const date = new Date(timestamp * 1000);
+    return format(date); // This will return strings like "5 minutes ago"
   };
 
   // Format the last refreshed time
   const formatLastRefreshed = () => {
-    if (!lastRefreshed) return "Never";
-
-    return new Date(lastRefreshed).toLocaleTimeString();
+    return `Last refreshed: ${format(
+      lastRefreshed
+    )} (${lastRefreshed.toLocaleTimeString()})`;
   };
 
   const handlePullImage = async () => {
@@ -139,7 +143,7 @@ const ImageList: React.FC<ImageListProps> = ({
         </div>
         <div className="flex items-center gap-2">
           <p className="text-sm text-muted-foreground">
-            Last updated: {formatLastRefreshed()}
+            {formatLastRefreshed()}
           </p>
           <Button
             variant="outline"
