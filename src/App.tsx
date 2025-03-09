@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { motion, AnimatePresence } from "motion/react";
 import ContainerList from "./components/ContainerList";
 import ImageList from "./components/ImageList";
+import ContainerDetails from "./components/ContainerDetails";
 import Sidebar from "./components/Sidebar";
 import {
   Card,
@@ -29,7 +30,7 @@ import {
 } from "@tauri-apps/plugin-window-state";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-type View = "containers" | "images" | "dashboard";
+type View = "containers" | "images" | "dashboard" | "container-details";
 
 interface ContainerInfo {
   id: string;
@@ -60,6 +61,8 @@ function App() {
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [dockerStatus, setDockerStatus] = useState<DockerStatus | null>(null);
+  const [selectedContainer, setSelectedContainer] =
+    useState<ContainerInfo | null>(null);
 
   // Initialize Docker client
   useEffect(() => {
@@ -178,11 +181,320 @@ function App() {
 
   const dockerStatusInfo = getDockerStatusInfo();
 
+  // Handle container selection for details view
+  const handleContainerSelect = (container: ContainerInfo) => {
+    setSelectedContainer(container);
+    setCurrentView("container-details");
+  };
+
+  // Handle back navigation from container details
+  const handleBackFromDetails = () => {
+    setCurrentView("containers");
+    setSelectedContainer(null);
+  };
+
+  // Render main content based on current view
+  const renderContent = () => {
+    if (dockerStatus && String(dockerStatus) === String(DockerStatus.Error)) {
+      return (
+        <Alert variant="destructive" className="mb-4">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Error</AlertTitle>
+          <AlertDescription>
+            Failed to connect to Docker. Please make sure Docker is running and
+            try again.
+          </AlertDescription>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-2"
+            onClick={async () => {
+              try {
+                setLoading(true);
+                const status = await invoke<DockerStatus>(
+                  "initialize_docker_client"
+                );
+                setDockerStatus(status);
+                await fetchData();
+              } catch (error) {
+                console.error("Failed to reconnect to Docker:", error);
+                setDockerStatus(DockerStatus.Error);
+              } finally {
+                setLoading(false);
+              }
+            }}
+          >
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Reconnect
+          </Button>
+        </Alert>
+      );
+    }
+
+    switch (currentView) {
+      case "dashboard":
+        return (
+          <motion.div
+            key="dashboard"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.3 }}
+            className="container mx-auto"
+          >
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+              <div>
+                <h1 className="text-3xl font-bold">Dashboard</h1>
+                <p className="text-muted-foreground">
+                  Overview of your Docker environment
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <p className="text-sm text-muted-foreground">
+                  Last updated: {formatLastRefreshed()}
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={fetchData}
+                  className="flex items-center gap-1"
+                  disabled={
+                    loading ||
+                    !dockerStatus ||
+                    dockerStatus === DockerStatus.Error
+                  }
+                >
+                  <RefreshCw
+                    className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+                  />
+                  Refresh
+                </Button>
+              </div>
+            </div>
+
+            {loading && containers.length === 0 && images.length === 0 ? (
+              <div className="flex justify-center items-center h-64">
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{
+                    duration: 1,
+                    repeat: Infinity,
+                    ease: "linear",
+                  }}
+                  className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full"
+                />
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-8">
+                  <DashboardCard
+                    title="Containers"
+                    value={containers.length.toString()}
+                    description="Total containers"
+                    icon={<Boxes className="h-5 w-5" />}
+                    onClick={() => setCurrentView("containers")}
+                    color="blue"
+                  />
+                  <DashboardCard
+                    title="Running"
+                    value={runningContainers.toString()}
+                    description="Active containers"
+                    icon={<Activity className="h-5 w-5" />}
+                    onClick={() => setCurrentView("containers")}
+                    color="green"
+                  />
+                  <DashboardCard
+                    title="Images"
+                    value={images.length.toString()}
+                    description="Available images"
+                    icon={<HardDrive className="h-5 w-5" />}
+                    onClick={() => setCurrentView("images")}
+                    color="purple"
+                  />
+                  <DashboardCard
+                    title="Docker"
+                    value={dockerStatusInfo.text}
+                    description="Engine status"
+                    icon={<Database className="h-5 w-5" />}
+                    onClick={() => {}}
+                    color={dockerStatusInfo.color as any}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <CardTitle>Recent Containers</CardTitle>
+                          <CardDescription>
+                            Your most recently created containers
+                          </CardDescription>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1">
+                            <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                            <span className="text-xs text-muted-foreground">
+                              {runningContainers} Running
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <div className="w-2 h-2 rounded-full bg-gray-400"></div>
+                            <span className="text-xs text-muted-foreground">
+                              {stoppedContainers} Stopped
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      {containers.length === 0 ? (
+                        <p className="text-muted-foreground text-center py-4">
+                          No containers found
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {containers.slice(0, 5).map((container) => (
+                            <motion.div
+                              key={container.id}
+                              className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 transition-colors"
+                              whileHover={{ x: 2 }}
+                            >
+                              <div className="flex items-center gap-2 overflow-hidden">
+                                <div
+                                  className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                                    container.state === "running"
+                                      ? "bg-green-500"
+                                      : "bg-gray-400"
+                                  }`}
+                                />
+                                <span className="font-medium truncate">
+                                  {container.names[0] ||
+                                    container.id.substring(0, 12)}
+                                </span>
+                              </div>
+                              <div className="text-sm text-muted-foreground truncate max-w-[180px]">
+                                {container.image}
+                              </div>
+                            </motion.div>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                    <CardFooter>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setCurrentView("containers")}
+                        className="text-sm text-primary hover:text-primary/90"
+                      >
+                        View all containers
+                      </Button>
+                    </CardFooter>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle>Recent Images</CardTitle>
+                      <CardDescription>
+                        Your most recently pulled images
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {images.length === 0 ? (
+                        <p className="text-muted-foreground text-center py-4">
+                          No images found
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {images.slice(0, 5).map((image, index) => {
+                            const tag = image.repo_tags[0] || "<none>:<none>";
+                            const [repo, tagName] = tag.split(":");
+
+                            return (
+                              <motion.div
+                                key={`${image.id}-${index}`}
+                                className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 transition-colors"
+                                whileHover={{ x: 2 }}
+                              >
+                                <div className="font-medium truncate max-w-[180px]">
+                                  {repo}
+                                </div>
+                                <div className="text-sm text-muted-foreground">
+                                  {tagName}
+                                </div>
+                              </motion.div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </CardContent>
+                    <CardFooter>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setCurrentView("images")}
+                        className="text-sm text-primary hover:text-primary/90"
+                      >
+                        View all images
+                      </Button>
+                    </CardFooter>
+                  </Card>
+                </div>
+              </>
+            )}
+          </motion.div>
+        );
+
+      case "containers":
+        return (
+          <ContainerList
+            containers={containers}
+            onRefresh={fetchData}
+            loading={loading}
+            lastRefreshed={lastRefreshed}
+            onContainerSelect={handleContainerSelect}
+          />
+        );
+
+      case "container-details":
+        if (!selectedContainer) {
+          setCurrentView("containers");
+
+          return null;
+        }
+
+        return (
+          <ContainerDetails
+            containerId={selectedContainer.id}
+            containerName={
+              selectedContainer.names[0] ||
+              selectedContainer.id.substring(0, 12)
+            }
+            onBack={handleBackFromDetails}
+          />
+        );
+
+      case "images":
+        return (
+          <ImageList
+            images={images}
+            onRefresh={fetchData}
+            loading={loading}
+            lastRefreshed={lastRefreshed}
+          />
+        );
+
+      default:
+        return null;
+    }
+  };
+
   return (
     <div className="flex h-screen bg-background text-foreground">
       <Sidebar
-        currentView={currentView}
-        setCurrentView={setCurrentView}
+        currentView={currentView as "containers" | "images" | "dashboard"}
+        setCurrentView={(view) => setCurrentView(view as View)}
         onToggle={handleSidebarToggle}
       />
 
@@ -192,257 +504,7 @@ function App() {
         animate={{ paddingLeft: isSidebarCollapsed ? "1.5rem" : "1.5rem" }}
         transition={{ duration: 0.2 }}
       >
-        {dockerStatus && dockerStatus === DockerStatus.Error && (
-          <Alert variant="destructive" className="mb-6">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Docker Connection Error</AlertTitle>
-            <AlertDescription>
-              {DockerStatus.Error}. Please make sure Docker is running and try
-              again.
-            </AlertDescription>
-          </Alert>
-        )}
-
-        <AnimatePresence mode="wait">
-          {currentView === "containers" && (
-            <motion.div
-              key="containers"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.3 }}
-              className="container mx-auto"
-            >
-              <ContainerList />
-            </motion.div>
-          )}
-
-          {currentView === "images" && (
-            <motion.div
-              key="images"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.3 }}
-              className="container mx-auto"
-            >
-              <ImageList />
-            </motion.div>
-          )}
-
-          {currentView === "dashboard" && (
-            <motion.div
-              key="dashboard"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.3 }}
-              className="container mx-auto"
-            >
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-                <div>
-                  <h1 className="text-3xl font-bold">Dashboard</h1>
-                  <p className="text-muted-foreground">
-                    Overview of your Docker environment
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <p className="text-sm text-muted-foreground">
-                    Last updated: {formatLastRefreshed()}
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={fetchData}
-                    className="flex items-center gap-1"
-                    disabled={
-                      loading ||
-                      !dockerStatus ||
-                      dockerStatus === DockerStatus.Error
-                    }
-                  >
-                    <RefreshCw
-                      className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
-                    />
-                    Refresh
-                  </Button>
-                </div>
-              </div>
-
-              {loading && containers.length === 0 && images.length === 0 ? (
-                <div className="flex justify-center items-center h-64">
-                  <motion.div
-                    animate={{ rotate: 360 }}
-                    transition={{
-                      duration: 1,
-                      repeat: Infinity,
-                      ease: "linear",
-                    }}
-                    className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full"
-                  />
-                </div>
-              ) : (
-                <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-8">
-                    <DashboardCard
-                      title="Containers"
-                      value={containers.length.toString()}
-                      description="Total containers"
-                      icon={<Boxes className="h-5 w-5" />}
-                      onClick={() => setCurrentView("containers")}
-                      color="blue"
-                    />
-                    <DashboardCard
-                      title="Running"
-                      value={runningContainers.toString()}
-                      description="Active containers"
-                      icon={<Activity className="h-5 w-5" />}
-                      onClick={() => setCurrentView("containers")}
-                      color="green"
-                    />
-                    <DashboardCard
-                      title="Images"
-                      value={images.length.toString()}
-                      description="Available images"
-                      icon={<HardDrive className="h-5 w-5" />}
-                      onClick={() => setCurrentView("images")}
-                      color="purple"
-                    />
-                    <DashboardCard
-                      title="Docker"
-                      value={dockerStatusInfo.text}
-                      description="Engine status"
-                      icon={<Database className="h-5 w-5" />}
-                      onClick={() => {}}
-                      color={dockerStatusInfo.color as any}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <Card>
-                      <CardHeader className="pb-3">
-                        <div className="flex justify-between items-center">
-                          <div>
-                            <CardTitle>Recent Containers</CardTitle>
-                            <CardDescription>
-                              Your most recently created containers
-                            </CardDescription>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <div className="flex items-center gap-1">
-                              <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                              <span className="text-xs text-muted-foreground">
-                                {runningContainers} Running
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <div className="w-2 h-2 rounded-full bg-gray-400"></div>
-                              <span className="text-xs text-muted-foreground">
-                                {stoppedContainers} Stopped
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        {containers.length === 0 ? (
-                          <p className="text-muted-foreground text-center py-4">
-                            No containers found
-                          </p>
-                        ) : (
-                          <div className="space-y-2">
-                            {containers.slice(0, 5).map((container) => (
-                              <motion.div
-                                key={container.id}
-                                className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 transition-colors"
-                                whileHover={{ x: 2 }}
-                              >
-                                <div className="flex items-center gap-2 overflow-hidden">
-                                  <div
-                                    className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                                      container.state === "running"
-                                        ? "bg-green-500"
-                                        : "bg-gray-400"
-                                    }`}
-                                  />
-                                  <span className="font-medium truncate">
-                                    {container.names[0] ||
-                                      container.id.substring(0, 12)}
-                                  </span>
-                                </div>
-                                <div className="text-sm text-muted-foreground truncate max-w-[180px]">
-                                  {container.image}
-                                </div>
-                              </motion.div>
-                            ))}
-                          </div>
-                        )}
-                      </CardContent>
-                      <CardFooter>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setCurrentView("containers")}
-                          className="text-sm text-primary hover:text-primary/90"
-                        >
-                          View all containers
-                        </Button>
-                      </CardFooter>
-                    </Card>
-
-                    <Card>
-                      <CardHeader className="pb-3">
-                        <CardTitle>Recent Images</CardTitle>
-                        <CardDescription>
-                          Your most recently pulled images
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        {images.length === 0 ? (
-                          <p className="text-muted-foreground text-center py-4">
-                            No images found
-                          </p>
-                        ) : (
-                          <div className="space-y-2">
-                            {images.slice(0, 5).map((image, index) => {
-                              const tag = image.repo_tags[0] || "<none>:<none>";
-                              const [repo, tagName] = tag.split(":");
-
-                              return (
-                                <motion.div
-                                  key={`${image.id}-${index}`}
-                                  className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 transition-colors"
-                                  whileHover={{ x: 2 }}
-                                >
-                                  <div className="font-medium truncate max-w-[180px]">
-                                    {repo}
-                                  </div>
-                                  <div className="text-sm text-muted-foreground">
-                                    {tagName}
-                                  </div>
-                                </motion.div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </CardContent>
-                      <CardFooter>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setCurrentView("images")}
-                          className="text-sm text-primary hover:text-primary/90"
-                        >
-                          View all images
-                        </Button>
-                      </CardFooter>
-                    </Card>
-                  </div>
-                </>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {renderContent()}
       </motion.main>
     </div>
   );

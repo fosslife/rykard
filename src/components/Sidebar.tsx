@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
+import { SettingsDrawer } from "./SettingsDrawer";
 
 type View = "containers" | "images" | "dashboard";
 
@@ -101,6 +102,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             }}
           />
 
+          {/* Nav items */}
           {navItems.map((item) => (
             <SidebarItem
               key={item.id}
@@ -116,29 +118,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       </nav>
 
       <div className="p-4 border-t border-border">
-        <button
-          className={`w-full flex items-center ${
-            isCollapsed ? "justify-center" : "space-x-3"
-          } px-3 py-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50`}
-          onClick={() => {}}
-        >
-          <span className="flex-shrink-0">
-            <Settings size={20} />
-          </span>
-          <AnimatePresence mode="wait">
-            {!isCollapsed && (
-              <motion.span
-                initial={{ opacity: 0, width: 0 }}
-                animate={{ opacity: 1, width: "auto" }}
-                exit={{ opacity: 0, width: 0 }}
-                transition={{ duration: 0.2 }}
-                className="whitespace-nowrap"
-              >
-                Settings
-              </motion.span>
-            )}
-          </AnimatePresence>
-        </button>
+        <SettingsDrawer isCollapsed={isCollapsed} />
       </div>
     </motion.div>
   );

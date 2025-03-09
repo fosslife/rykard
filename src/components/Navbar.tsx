@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from "react";
 import { motion } from "motion/react";
+import { ThemeToggle } from "./ui/theme-toggle";
 
 type View = "containers" | "images" | "dashboard";
 
@@ -49,45 +50,46 @@ const Navbar: React.FC<NavbarProps> = ({ currentView, setCurrentView }) => {
           <h1 className="text-xl font-bold">Rykard</h1>
         </div>
 
-        <nav className="relative">
-          <ul className="flex items-center">
+        <nav className="hidden md:block">
+          <ul className="flex space-x-1 relative">
             {/* Active indicator */}
             {activeItem && (
               <motion.div
-                className="absolute h-8 rounded-md bg-primary/10 border border-primary/20"
+                className="absolute bottom-0 h-1 bg-primary rounded-full"
                 initial={false}
                 animate={{
                   left: activeItem.left,
                   width: activeItem.width,
                 }}
-                transition={{
-                  type: "spring",
-                  stiffness: 350,
-                  damping: 30,
-                }}
+                transition={{ type: "spring", stiffness: 500, damping: 30 }}
               />
             )}
 
+            {/* Nav items */}
             <NavItem
-              ref={(el) => (itemsRef.current.dashboard = el)}
               label="Dashboard"
               isActive={currentView === "dashboard"}
               onClick={() => setCurrentView("dashboard")}
+              ref={(el) => (itemsRef.current.dashboard = el)}
             />
             <NavItem
-              ref={(el) => (itemsRef.current.containers = el)}
               label="Containers"
               isActive={currentView === "containers"}
               onClick={() => setCurrentView("containers")}
+              ref={(el) => (itemsRef.current.containers = el)}
             />
             <NavItem
-              ref={(el) => (itemsRef.current.images = el)}
               label="Images"
               isActive={currentView === "images"}
               onClick={() => setCurrentView("images")}
+              ref={(el) => (itemsRef.current.images = el)}
             />
           </ul>
         </nav>
+
+        <div className="flex items-center space-x-2">
+          <ThemeToggle />
+        </div>
       </div>
     </header>
   );

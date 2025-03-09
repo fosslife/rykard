@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { RefreshCw, Play, Square, Trash, FileText } from "lucide-react";
+import { RefreshCw, Play, Square, Trash, FileText, Info } from "lucide-react";
 
 interface ContainerInfo {
   id: string;
@@ -23,60 +23,57 @@ interface ContainerInfo {
   status: string;
 }
 
-const ContainerList: React.FC = () => {
-  const [containers, setContainers] = useState<ContainerInfo[]>([]);
-  const [loading, setLoading] = useState(true);
+interface ContainerListProps {
+  containers: ContainerInfo[];
+  loading: boolean;
+  lastRefreshed: Date;
+  onRefresh: () => Promise<void>;
+  onContainerSelect?: (container: ContainerInfo) => void;
+}
+
+const ContainerList: React.FC<ContainerListProps> = ({
+  containers,
+  loading,
+  lastRefreshed,
+  onRefresh,
+  onContainerSelect,
+}) => {
   const [error, setError] = useState<string | null>(null);
   const [selectedContainer, setSelectedContainer] = useState<{
     id: string;
     name: string;
   } | null>(null);
 
-  const fetchContainers = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const result = await invoke<ContainerInfo[]>("list_containers");
-      setContainers(result);
-    } catch (err) {
-      console.error("Failed to fetch containers:", err);
-      setError("Failed to fetch containers. Make sure Docker is running.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchContainers();
-  }, []);
-
   const handleStartContainer = async (containerId: string) => {
     try {
+      setError(null);
       await invoke("start_container", { containerId });
-      fetchContainers();
+      onRefresh();
     } catch (err) {
       console.error("Failed to start container:", err);
-      setError("Failed to start container.");
+      setError(`Failed to start container: ${err}`);
     }
   };
 
   const handleStopContainer = async (containerId: string) => {
     try {
+      setError(null);
       await invoke("stop_container", { containerId });
-      fetchContainers();
+      onRefresh();
     } catch (err) {
       console.error("Failed to stop container:", err);
-      setError("Failed to stop container.");
+      setError(`Failed to stop container: ${err}`);
     }
   };
 
   const handleRemoveContainer = async (containerId: string) => {
     try {
+      setError(null);
       await invoke("remove_container", { containerId });
-      fetchContainers();
+      onRefresh();
     } catch (err) {
       console.error("Failed to remove container:", err);
-      setError("Failed to remove container.");
+      setError(`Failed to remove container: ${err}`);
     }
   };
 
@@ -86,6 +83,12 @@ const ContainerList: React.FC = () => {
 
   const handleCloseLogs = () => {
     setSelectedContainer(null);
+  };
+
+  const handleViewDetails = (container: ContainerInfo) => {
+    if (onContainerSelect) {
+      onContainerSelect(container);
+    }
   };
 
   const getStatusBadgeVariant = (state: string) => {
@@ -106,7 +109,7 @@ const ContainerList: React.FC = () => {
         <Button
           variant="outline"
           size="sm"
-          onClick={fetchContainers}
+          onClick={onRefresh}
           className="flex items-center gap-1"
         >
           <RefreshCw className="h-4 w-4" />
@@ -170,8 +173,8 @@ const ContainerList: React.FC = () => {
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
                         <Button
-                          variant="outline"
-                          size="sm"
+                          variant="ghost"
+                          size="icon"
                           onClick={() =>
                             handleViewLogs(
                               container.id,
@@ -179,9 +182,9 @@ const ContainerList: React.FC = () => {
                                 container.id.substring(0, 12)
                             )
                           }
+                          title="View Logs"
                         >
                           <FileText className="h-4 w-4" />
-                          <span className="sr-only">View Logs</span>
                         </Button>
 
                         {container.state === "running" ? (
@@ -212,6 +215,17 @@ const ContainerList: React.FC = () => {
                           <Trash className="h-4 w-4" />
                           <span className="sr-only">Remove</span>
                         </Button>
+
+                        {onContainerSelect && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleViewDetails(container)}
+                            title="View Details"
+                          >
+                            <Info className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

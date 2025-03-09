@@ -21,30 +21,22 @@ interface ImageInfo {
   created: number;
 }
 
-const ImageList: React.FC = () => {
-  const [images, setImages] = useState<ImageInfo[]>([]);
-  const [loading, setLoading] = useState(true);
+interface ImageListProps {
+  images: ImageInfo[];
+  loading: boolean;
+  lastRefreshed: Date;
+  onRefresh: () => Promise<void>;
+}
+
+const ImageList: React.FC<ImageListProps> = ({
+  images,
+  loading,
+  lastRefreshed,
+  onRefresh,
+}) => {
   const [error, setError] = useState<string | null>(null);
   const [pullImageName, setPullImageName] = useState("");
   const [isPulling, setIsPulling] = useState(false);
-
-  const fetchImages = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const result = await invoke<ImageInfo[]>("list_images");
-      setImages(result);
-    } catch (err) {
-      console.error("Failed to fetch images:", err);
-      setError("Failed to fetch images. Make sure Docker is running.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchImages();
-  }, []);
 
   // Format bytes to human-readable format
   const formatBytes = (bytes: number): string => {
@@ -74,7 +66,7 @@ const ImageList: React.FC = () => {
       setError(null);
       await invoke("pull_image", { imageName: pullImageName });
       setPullImageName("");
-      fetchImages();
+      onRefresh();
     } catch (err) {
       console.error("Failed to pull image:", err);
       setError(`Failed to pull image: ${err}`);
@@ -87,7 +79,7 @@ const ImageList: React.FC = () => {
     try {
       setError(null);
       await invoke("remove_image", { imageId });
-      fetchImages();
+      onRefresh();
     } catch (err) {
       console.error("Failed to remove image:", err);
       setError(`Failed to remove image: ${err}`);
@@ -101,7 +93,7 @@ const ImageList: React.FC = () => {
         <Button
           variant="outline"
           size="sm"
-          onClick={fetchImages}
+          onClick={onRefresh}
           className="flex items-center gap-1"
         >
           <RefreshCw className="h-4 w-4" />
