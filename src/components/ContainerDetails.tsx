@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { motion } from "motion/react";
 import {
@@ -28,6 +28,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useDockerEvents } from "@/lib/docker-events-context";
+import { DockerEvent, isContainerEvent, debounce } from "@/lib/docker-events";
 
 interface ContainerStats {
   cpu_usage_percent: number;
@@ -85,6 +87,10 @@ export default function ContainerDetails({
   const [error, setError] = useState<string | null>(null);
   const [refreshInterval, setRefreshInterval] = useState<number | null>(2000);
   const [activeTab, setActiveTab] = useState<"stats" | "config">("stats");
+  const [isHighlighted, setIsHighlighted] = useState(false);
+
+  // Get Docker events
+  const { addEventHandler, removeEventHandler } = useDockerEvents();
 
   // Format bytes to human-readable format
   const formatBytes = (bytes: number, decimals = 2) => {
@@ -140,10 +146,37 @@ export default function ContainerDetails({
     setLoading(false);
   };
 
+  // Create a debounced version of fetchData to avoid excessive updates
+  const debouncedFetchData = useCallback(debounce(fetchData, 500), [
+    containerId,
+  ]);
+
   // Initial data fetch
   useEffect(() => {
     fetchData();
   }, [containerId]);
+
+  // Handle Docker events for this specific container
+  useEffect(() => {
+    const handleContainerEvent = (event: DockerEvent) => {
+      if (isContainerEvent(event, containerId)) {
+        console.log(`Container event detected for ${containerId}:`, event);
+
+        // Highlight the container details briefly
+        setIsHighlighted(true);
+        setTimeout(() => setIsHighlighted(false), 2000);
+
+        // Refresh the container data
+        debouncedFetchData();
+      }
+    };
+
+    addEventHandler(handleContainerEvent);
+
+    return () => {
+      removeEventHandler(handleContainerEvent);
+    };
+  }, [containerId, addEventHandler, removeEventHandler, debouncedFetchData]);
 
   // Set up refresh interval for stats
   useEffect(() => {
@@ -205,7 +238,11 @@ export default function ContainerDetails({
   }
 
   return (
-    <div className="flex flex-col space-y-4 p-4">
+    <div
+      className={`flex flex-col space-y-4 p-4 ${
+        isHighlighted ? "bg-primary/5 transition-colors duration-500" : ""
+      }`}
+    >
       <div className="flex items-center space-x-2">
         <Button variant="outline" size="sm" onClick={onBack}>
           <ArrowLeft className="mr-2 h-4 w-4" />

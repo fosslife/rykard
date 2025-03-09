@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { motion, AnimatePresence } from "motion/react";
 import ContainerList from "./components/ContainerList";
@@ -29,6 +29,13 @@ import {
   StateFlags,
 } from "@tauri-apps/plugin-window-state";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useDockerEvents } from "./lib/docker-events-context";
+import {
+  DockerEvent,
+  isContainerEvent,
+  isImageEvent,
+  debounce,
+} from "./lib/docker-events";
 
 type View = "containers" | "images" | "dashboard" | "container-details";
 
@@ -63,6 +70,10 @@ function App() {
   const [dockerStatus, setDockerStatus] = useState<DockerStatus | null>(null);
   const [selectedContainer, setSelectedContainer] =
     useState<ContainerInfo | null>(null);
+
+  // Get Docker events context
+  const { isInitialized: isEventsInitialized, addEventHandler } =
+    useDockerEvents();
 
   // Initialize Docker client
   useEffect(() => {
@@ -119,21 +130,42 @@ function App() {
     }
   };
 
+  // Create a debounced version of fetchData to avoid excessive updates
+  const debouncedFetchData = useCallback(debounce(fetchData, 500), [
+    dockerStatus,
+  ]);
+
+  // Handle Docker events
   useEffect(() => {
-    if (dockerStatus && dockerStatus === DockerStatus.Connected) {
-      fetchData();
-
-      // Refresh data every 30 seconds
-      // TODO: Replace with Docker event system
-      const interval = setInterval(() => {
-        if (currentView === "dashboard") {
-          fetchData();
-        }
-      }, 30000);
-
-      return () => clearInterval(interval);
+    if (
+      !isEventsInitialized ||
+      !dockerStatus ||
+      dockerStatus !== DockerStatus.Connected
+    ) {
+      return;
     }
-  }, [currentView, dockerStatus]);
+
+    const handleDockerEvent = (event: DockerEvent) => {
+      console.log("Docker event received:", event);
+
+      // Determine if we need to refresh data based on the event type
+      if (isContainerEvent(event)) {
+        console.log("Container event detected, refreshing containers");
+        debouncedFetchData();
+      } else if (isImageEvent(event)) {
+        console.log("Image event detected, refreshing images");
+        debouncedFetchData();
+      }
+    };
+
+    // Add event handler
+    addEventHandler(handleDockerEvent);
+
+    // Initial data fetch
+    fetchData();
+
+    // No need for polling interval anymore
+  }, [isEventsInitialized, dockerStatus, debouncedFetchData, addEventHandler]);
 
   useEffect(() => {
     restoreStateCurrent(StateFlags.ALL);

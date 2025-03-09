@@ -47,11 +47,11 @@ This project aims to create a lightweight Docker Desktop alternative using Tauri
   - [x] Docker client state management with Tauri state
   - [x] Docker status monitoring
   - [x] Error handling and recovery
-- [ ] Real-time Updates
-  - [ ] Replace polling with Docker event system
-- [ ] Container details
-  - [ ] View container stats (CPU, memory, network)
-  - [ ] View container configuration
+- [x] Real-time Updates
+  - [x] Replace polling with Docker event system
+- [x] Container details
+  - [x] View container stats (CPU, memory, network)
+  - [x] View container configuration
 - [ ] Container creation
   - [ ] Basic container creation form
   - [ ] Environment variables configuration
@@ -76,8 +76,8 @@ This project aims to create a lightweight Docker Desktop alternative using Tauri
 
 ### Phase 4: Polish and Extras
 
-- [ ] Settings and preferences
-- [ ] Dark/light theme
+- [x] Settings and preferences
+- [x] Dark/light theme
 - [ ] Resource usage dashboard
 - [ ] Notifications for container events
 - [ ] Export/import container configurations
@@ -95,8 +95,12 @@ This project aims to create a lightweight Docker Desktop alternative using Tauri
   - Modern UI with vertical sidebar, dashboard, and animations
   - Collapsible sidebar
   - Docker client state management with Tauri state
-- **In Progress**: Real-time updates with Docker events
-- **Next Up**: Container details
+  - Dark/light theme toggle with system preference support
+  - Settings drawer with organized sections
+  - Real-time updates with Docker events
+  - Container details with stats and configuration
+- **In Progress**: Container creation
+- **Next Up**: Docker Compose support
 
 ## Development Guidelines
 

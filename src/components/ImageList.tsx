@@ -13,6 +13,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { RefreshCw, Trash, Download } from "lucide-react";
+import { useDockerEvents } from "@/lib/docker-events-context";
+import { DockerEvent, isImageEvent } from "@/lib/docker-events";
 
 interface ImageInfo {
   id: string;
@@ -37,6 +39,41 @@ const ImageList: React.FC<ImageListProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [pullImageName, setPullImageName] = useState("");
   const [isPulling, setIsPulling] = useState(false);
+  const [affectedImages, setAffectedImages] = useState<Set<string>>(new Set());
+
+  // Get Docker events
+  const { addEventHandler, removeEventHandler } = useDockerEvents();
+
+  // Handle Docker events for images
+  useEffect(() => {
+    const handleImageEvent = (event: DockerEvent) => {
+      if (isImageEvent(event)) {
+        // Highlight the affected image
+        const imageId = event.Actor.ID;
+        setAffectedImages((prev) => {
+          const newSet = new Set(prev);
+          newSet.add(imageId);
+
+          // Remove the highlight after 2 seconds
+          setTimeout(() => {
+            setAffectedImages((prev) => {
+              const newSet = new Set(prev);
+              newSet.delete(imageId);
+              return newSet;
+            });
+          }, 2000);
+
+          return newSet;
+        });
+      }
+    };
+
+    addEventHandler(handleImageEvent);
+
+    return () => {
+      removeEventHandler(handleImageEvent);
+    };
+  }, [addEventHandler, removeEventHandler]);
 
   // Format bytes to human-readable format
   const formatBytes = (bytes: number): string => {
@@ -52,6 +89,13 @@ const ImageList: React.FC<ImageListProps> = ({
   // Format timestamp to human-readable date
   const formatDate = (timestamp: number): string => {
     return new Date(timestamp * 1000).toLocaleString();
+  };
+
+  // Format the last refreshed time
+  const formatLastRefreshed = () => {
+    if (!lastRefreshed) return "Never";
+
+    return new Date(lastRefreshed).toLocaleTimeString();
   };
 
   const handlePullImage = async () => {
@@ -87,107 +131,120 @@ const ImageList: React.FC<ImageListProps> = ({
   };
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-2xl font-bold">Images</CardTitle>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onRefresh}
-          className="flex items-center gap-1"
-        >
-          <RefreshCw className="h-4 w-4" />
-          Refresh
-        </Button>
-      </CardHeader>
-      <CardContent>
-        <div className="mb-6 p-4 bg-card border border-border rounded-md">
-          <h3 className="text-lg font-medium mb-2">Pull Image</h3>
-          <div className="flex gap-2">
-            <Input
-              value={pullImageName}
-              onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                setPullImageName(e.target.value)
-              }
-              placeholder="Enter image name (e.g., nginx:latest)"
-              className="flex-1"
-            />
-            <Button
-              onClick={handlePullImage}
-              disabled={isPulling}
-              className="flex items-center gap-1"
-            >
-              <Download className="h-4 w-4" />
-              {isPulling ? "Pulling..." : "Pull"}
-            </Button>
-          </div>
+    <div className="container mx-auto">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+        <div>
+          <h1 className="text-3xl font-bold">Images</h1>
+          <p className="text-muted-foreground">Manage your Docker images</p>
         </div>
-
-        {error && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-4 p-4 bg-destructive/10 border border-destructive text-destructive rounded-md"
+        <div className="flex items-center gap-2">
+          <p className="text-sm text-muted-foreground">
+            Last updated: {formatLastRefreshed()}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onRefresh}
+            className="flex items-center gap-1"
+            disabled={loading}
           >
-            {error}
-          </motion.div>
-        )}
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        </div>
+      </div>
 
-        {loading ? (
-          <div className="flex justify-center items-center h-64">
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-              className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full"
-            />
-          </div>
-        ) : images.length === 0 ? (
-          <div className="bg-muted/50 p-6 rounded-lg border border-border">
-            <p className="text-center text-muted-foreground">No images found</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Repository</TableHead>
-                  <TableHead>Tag</TableHead>
-                  <TableHead>Image ID</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead>Size</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {images
-                  .map((image) => {
-                    // Handle images with no tags
-                    const tags =
-                      image.repo_tags.length > 0 &&
-                      image.repo_tags[0] !== "<none>:<none>"
-                        ? image.repo_tags
-                        : ["<none>:<none>"];
+      <div className="grid gap-6">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle>Pull Image</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex space-x-2">
+              <Input
+                placeholder="Image name (e.g., nginx:latest)"
+                value={pullImageName}
+                onChange={(e) => setPullImageName(e.target.value)}
+                disabled={isPulling}
+              />
+              <Button
+                onClick={handlePullImage}
+                disabled={!pullImageName.trim() || isPulling}
+              >
+                {isPulling ? (
+                  <>
+                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                    Pulling...
+                  </>
+                ) : (
+                  <>
+                    <Download className="mr-2 h-4 w-4" />
+                    Pull
+                  </>
+                )}
+              </Button>
+            </div>
+            {error && (
+              <div className="mt-4 bg-red-50 text-red-600 p-3 rounded-md">
+                {error}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
-                    return tags.map((tag, index) => {
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle>Image List</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loading && images.length === 0 ? (
+              <div className="flex justify-center items-center h-64">
+                <RefreshCw className="h-8 w-8 animate-spin text-gray-400" />
+              </div>
+            ) : images.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                No images found
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Repository</TableHead>
+                      <TableHead>Tag</TableHead>
+                      <TableHead>ID</TableHead>
+                      <TableHead>Size</TableHead>
+                      <TableHead>Created</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {images.map((image, index) => {
+                      const tag = image.repo_tags[0] || "<none>:<none>";
                       const [repo, tagName] = tag.split(":");
 
                       return (
                         <TableRow
                           key={`${image.id}-${index}`}
-                          className="group"
+                          className={
+                            affectedImages.has(image.id)
+                              ? "bg-primary/10 transition-colors duration-500"
+                              : ""
+                          }
                         >
                           <TableCell className="font-medium">{repo}</TableCell>
                           <TableCell>{tagName}</TableCell>
                           <TableCell className="font-mono text-xs">
-                            {image.id.substring(7, 19)}
+                            {image.id.substring(0, 12)}
                           </TableCell>
-                          <TableCell>{formatDate(image.created)}</TableCell>
                           <TableCell>{formatBytes(image.size)}</TableCell>
+                          <TableCell>{formatDate(image.created)}</TableCell>
                           <TableCell className="text-right">
                             <Button
-                              variant="destructive"
-                              size="sm"
+                              variant="ghost"
+                              size="icon"
                               onClick={() => handleRemoveImage(image.id)}
+                              title="Remove Image"
                             >
                               <Trash className="h-4 w-4" />
                               <span className="sr-only">Remove</span>
@@ -195,15 +252,15 @@ const ImageList: React.FC<ImageListProps> = ({
                           </TableCell>
                         </TableRow>
                       );
-                    });
-                  })
-                  .flat()}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
 };
 
