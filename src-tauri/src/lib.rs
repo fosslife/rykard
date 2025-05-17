@@ -1,4 +1,6 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+use bollard::container::Config as BollardConfig; // Add import for Config
+use bollard::container::CreateContainerOptions as BollardCreateOptions; // Add import for CreateContainerOptions
 use bollard::container::{
     ListContainersOptions, StartContainerOptions, Stats, StopContainerOptions,
 };
@@ -476,6 +478,79 @@ async fn get_container_logs(container_id: &str, tail_lines: Option<u64>) -> Resu
         Err(e) => Err(format!("Failed to execute command: {}", e)),
     }
 }
+
+// --- Start: Add create_container command ---
+
+/// Options for creating a new container, received from the frontend
+#[derive(Debug, Deserialize)]
+struct CreateContainerOptions {
+    image: String,
+    name: String,
+    // TODO: Add ports, volumes, env vars later
+}
+
+#[tauri::command]
+async fn create_container(
+    options: CreateContainerOptions,
+    state: State<'_, DockerStateManager>,
+) -> Result<(), String> {
+    // Get the Docker client
+    let docker = {
+        let docker_state = state.lock().await;
+        match docker_state.get_client() {
+            Ok(client) => client,
+            Err(e) => return Err(e.to_string()),
+        }
+    };
+
+    // Prepare Bollard's CreateContainerOptions and Config
+    let config = BollardConfig {
+        image: Some(options.image.clone()),
+        // TODO: Add HostConfig for ports, volumes etc.
+        ..Default::default()
+    };
+
+    let create_options = Some(BollardCreateOptions {
+        name: options.name.clone(),
+        platform: None, // Specifying platform for broader compatibility
+    });
+
+    // Call Bollard's create_container
+    match docker.create_container(create_options, config).await {
+        Ok(response) => {
+            println!("Container created successfully: ID {}", response.id);
+            // Attempt to start the container
+            match docker
+                .start_container(&response.id, None::<StartContainerOptions<String>>)
+                .await
+            {
+                Ok(_) => {
+                    println!("Container started successfully: ID {}", response.id);
+                    Ok(())
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Container {} created, but failed to start: {}",
+                        response.id, e
+                    );
+                    // Even if starting fails, creation was successful, so we could argue about the return.
+                    // For now, let's return an error that it failed to start.
+                    Err(format!(
+                        "Container created (ID: {}), but failed to start: {}",
+                        response.id,
+                        DockerError::from(e).to_string()
+                    ))
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("Failed to create container: {}", e);
+            Err(DockerError::from(e).to_string())
+        }
+    }
+}
+
+// --- End: Add create_container command ---
 
 /// Subscribe to Docker events and forward them to the frontend
 /// This replaces polling with real-time event notifications
@@ -981,7 +1056,8 @@ pub fn run() {
             get_container_config,
             initialize_docker_client,
             get_docker_status,
-            subscribe_to_docker_events
+            subscribe_to_docker_events,
+            create_container // Register the new command
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -19,7 +19,6 @@ import {
   Square,
   Trash,
   FileText,
-  Info,
   ChevronDown,
   ChevronRight,
 } from "lucide-react";

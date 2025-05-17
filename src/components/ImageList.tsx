@@ -12,10 +12,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { RefreshCw, Trash, Download } from "lucide-react";
+import { RefreshCw, Trash, Download, Play } from "lucide-react";
 import { useDockerEvents } from "@/lib/docker-events-context";
 import { DockerEvent, isImageEvent } from "@/lib/docker-events";
 import { format } from "timeago.js";
+import ContainerCreateForm from "./ContainerCreateForm";
 
 interface ImageInfo {
   id: string;
@@ -29,6 +30,7 @@ interface ImageListProps {
   loading: boolean;
   lastRefreshed: Date;
   onRefresh: () => Promise<void>;
+  onContainerCreated: () => void;
 }
 
 const ImageList: React.FC<ImageListProps> = ({
@@ -36,11 +38,16 @@ const ImageList: React.FC<ImageListProps> = ({
   loading,
   lastRefreshed,
   onRefresh,
+  onContainerCreated,
 }) => {
   const [error, setError] = useState<string | null>(null);
   const [pullImageName, setPullImageName] = useState("");
   const [isPulling, setIsPulling] = useState(false);
   const [affectedImages, setAffectedImages] = useState<Set<string>>(new Set());
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [selectedImageForCreate, setSelectedImageForCreate] = useState<
+    string | null
+  >(null);
 
   // Get Docker events
   const { addEventHandler, removeEventHandler } = useDockerEvents();
@@ -132,6 +139,21 @@ const ImageList: React.FC<ImageListProps> = ({
       console.error("Failed to remove image:", err);
       setError(`Failed to remove image: ${err}`);
     }
+  };
+
+  const handleOpenCreateModal = (imageName: string) => {
+    setSelectedImageForCreate(imageName);
+    setIsCreateModalOpen(true);
+  };
+
+  const handleCloseCreateModal = () => {
+    setIsCreateModalOpen(false);
+    setSelectedImageForCreate(null);
+  };
+
+  const handleContainerCreationSuccess = () => {
+    handleCloseCreateModal();
+    onContainerCreated();
   };
 
   return (
@@ -247,6 +269,20 @@ const ImageList: React.FC<ImageListProps> = ({
                             <Button
                               variant="ghost"
                               size="icon"
+                              onClick={() =>
+                                handleOpenCreateModal(
+                                  image.repo_tags[0] || image.id
+                                )
+                              }
+                              title="Create Container from Image"
+                              className="mr-2"
+                            >
+                              <Play className="h-4 w-4" />
+                              <span className="sr-only">Create Container</span>
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
                               onClick={() => handleRemoveImage(image.id)}
                               title="Remove Image"
                             >
@@ -264,6 +300,14 @@ const ImageList: React.FC<ImageListProps> = ({
           </CardContent>
         </Card>
       </div>
+      {selectedImageForCreate && (
+        <ContainerCreateForm
+          isOpen={isCreateModalOpen}
+          onClose={handleCloseCreateModal}
+          onSuccess={handleContainerCreationSuccess}
+          initialImageName={selectedImageForCreate}
+        />
+      )}
     </div>
   );
 };
